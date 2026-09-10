@@ -10,14 +10,12 @@ import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.util.Log
 import org.lsposed.hiddenapibypass.HiddenApiBypass
-import java.io.File
 import java.lang.reflect.Method
 
 /** Apple Seed carrier/IMS broker. No Shizuku dependency. */
 class BrokerInstrumentation : Instrumentation() {
     companion object {
         private const val TAG = "AppleSeedBroker"
-        private const val RESULT_FILE = "apple_seed_carrier_result.txt"
         private val IMPORTANT_KEYS = listOf(
             "carrier_volte_available_bool",
             "enhanced_4g_lte_on_by_default_bool",
@@ -58,7 +56,7 @@ class BrokerInstrumentation : Instrumentation() {
                 Log.e(TAG, "Broker failed", error)
                 "ERROR: ${error.message ?: error.javaClass.simpleName}"
             }
-            runCatching { File(targetContext.filesDir, RESULT_FILE).writeText(result) }
+            sendStatus(1, Bundle().apply { putString("evidence", result) })
             finish(code, Bundle().apply { putString("result", result) })
         }.start()
     }
@@ -137,7 +135,7 @@ class BrokerInstrumentation : Instrumentation() {
         if (slot >= 0) resetIms(slot)
         return buildString {
             appendLine("OVERRIDE=APPLIED")
-            changed.forEach(::appendLine)
+            changed.forEach { appendLine(it) }
             appendLine("IMS=RESET REQUESTED")
             appendLine("VERIFY=RUN READ AGAIN")
         }.trim()
