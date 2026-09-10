@@ -173,10 +173,9 @@ class MainActivity : ComponentActivity() {
                             requestPermission = { permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) },
                             openSettings = { openWirelessDebugging() },
                             pair = {
-                                adb = "OPENING WIRELESS DEBUGGING..."
+                                adb = "READY FOR 6-DIGIT PAIRING CODE"
                                 pairCode = ""
                                 pairDialog = true
-                                openWirelessDebugging()
                             },
                             reconnect = {
                                 adb = "CONNECTING..."
@@ -325,15 +324,15 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable private fun Section(title: String, subtitle: String) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, color = MainText, fontWeight = FontWeight.ExtraBold)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(title, color = MainText, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
             Text(subtitle, color = Muted, fontSize = 10.sp)
         }
     }
 
     @Composable private fun Data(label: String, value: String) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, color = Muted, fontSize = 10.sp)
+            Text(label, color = Muted, fontSize = 11.sp)
             Text(value, color = MainText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
@@ -341,7 +340,7 @@ class MainActivity : ComponentActivity() {
     @Composable private fun Evidence(text: String) {
         if (text.isBlank()) return
         Card(Modifier.fillMaxWidth().padding(12.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
-            Text(text, Modifier.padding(14.dp), color = MainText, fontSize = 10.sp)
+            Text(text, color = MainText, modifier = Modifier.padding(12.dp), fontSize = 10.sp)
         }
     }
 }
