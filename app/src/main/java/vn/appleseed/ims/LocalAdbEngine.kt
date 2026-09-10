@@ -12,7 +12,7 @@ import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
 import java.io.File
-import java.util.concurrent.AtomicBoolean
+import java.util.concurrent.atomic.AtomicBoolean
 
 object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
@@ -72,7 +72,8 @@ object LocalAdbEngine {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
         val finished = AtomicBoolean(false)
-        val listener = object : NsdManager.DiscoveryListener {
+        lateinit var listener: NsdManager.DiscoveryListener
+        listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String?) = Unit
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
@@ -82,7 +83,7 @@ object LocalAdbEngine {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
                             if (finished.compareAndSet(false, true)) {
-                                runCatching { nsd.stopServiceDiscovery(this@object) }
+                                runCatching { nsd.stopServiceDiscovery(listener) }
                                 onError("Không resolve được ADB service ($errorCode)")
                             }
                         }
@@ -90,13 +91,13 @@ object LocalAdbEngine {
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             if (!finished.compareAndSet(false, true)) return
                             save(info)
-                            runCatching { nsd.stopServiceDiscovery(this@object) }
+                            runCatching { nsd.stopServiceDiscovery(listener) }
                             onFound(info.port)
                         }
                     })
                 }.onFailure {
                     if (finished.compareAndSet(false, true)) {
-                        runCatching { nsd.stopServiceDiscovery(this) }
+                        runCatching { nsd.stopServiceDiscovery(listener) }
                         onError("Resolve service lỗi: ${it.message}")
                     }
                 }
@@ -120,14 +121,14 @@ object LocalAdbEngine {
             return onDone(false, "Mã Pair phải đủ 6 chữ số")
         }
 
-        // The pairing port is temporary and can change every time Android opens
-        // the pairing dialog. Never reuse an old cached port.
+        // Pairing port is temporary. Always discover a fresh port for the
+        // currently displayed Android pairing dialog; never reuse an old one.
         pairingPort = null
         connectPort = null
 
         fun waitForConnect(attempt: Int = 0) {
             if (attempt >= 10) {
-                onDone(false, "PAIR OK nhưng chưa thấy cổng CONNECT. Mở lại Wireless debugging và thử PAIR bằng mã mới.")
+                onDone(false, "PAIR OK nhưng chưa thấy cổng CONNECT. Mở lại Wireless debugging và thử mã mới.")
                 return
             }
             discoverConnectPort(
