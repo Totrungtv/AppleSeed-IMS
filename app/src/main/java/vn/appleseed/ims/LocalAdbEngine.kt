@@ -27,6 +27,7 @@ object LocalAdbEngine {
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
     private var pairingPort: Int? = null
+    private var pairingDiscoveryActive = AtomicBoolean(false)
     private val configured = AtomicBoolean(false)
 
     fun init(context: Context) {
@@ -59,11 +60,26 @@ object LocalAdbEngine {
     }
 
     fun preparePairing() {
+        if (pairingDiscoveryActive.getAndSet(true)) return
         pairingPort = null
-        discoverPairingPort(
-            onFound = { found -> Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found") },
-            onError = { error -> Log.w(TAG, "PAIR endpoint not ready yet: $error") }
-        )
+        Thread {
+            while (pairingDiscoveryActive.get()) {
+                if (pairingPort == null) {
+                    discoverPairingPort(
+                        onFound = { found ->
+                            pairingPort = found
+                            Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found")
+                        },
+                        onError = { error -> Log.d(TAG, "PAIR discovery retry: $error") }
+                    )
+                }
+                Thread.sleep(1000)
+            }
+        }.start()
+    }
+
+    fun stopPairingDiscovery() {
+        pairingDiscoveryActive.set(false)
     }
 
     fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
@@ -129,10 +145,7 @@ object LocalAdbEngine {
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
-
-            override fun onDiscoveryStopped(serviceType: String?) {
-                Log.d(TAG, "mDNS discovery stopped: $serviceType")
-            }
+            override fun onDiscoveryStopped(serviceType: String?) { Log.d(TAG, "mDNS discovery stopped: $serviceType") }
 
             override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
                 if (finished.compareAndSet(false, true)) {
@@ -170,6 +183,7 @@ object LocalAdbEngine {
             return onDone(false, "Mã Pair phải đủ 6 chữ số")
         }
 
+        stopPairingDiscovery()
         val cachedPort = pairingPort
         connectPort = null
 
@@ -305,6 +319,7 @@ object LocalAdbEngine {
     }
 
     fun close() {
+        stopPairingDiscovery()
         runCatching { activeKadb?.close() }
         activeKadb = null
     }
