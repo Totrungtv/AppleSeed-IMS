@@ -13,8 +13,8 @@ android {
         applicationId = "vn.appleseed.ims"
         minSdk = 28
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0-standalone-ims"
+        versionCode = 4
+        versionName = "0.4.0-apple-seed-carrier-engine"
     }
 
     buildTypes {
@@ -43,11 +43,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.core:core-ktx:1.17.0")
-
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
     implementation("com.tananaev:adblib:1.3")
     implementation("com.flyfishxu:kadb:2.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
