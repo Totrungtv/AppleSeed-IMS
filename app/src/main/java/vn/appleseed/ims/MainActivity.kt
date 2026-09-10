@@ -15,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -68,7 +69,6 @@ private val Cyan = Color(0xFF46E6FF)
 private val Blue = Color(0xFF557CFF)
 private val Good = Color(0xFF42E6A4)
 private val Warn = Color(0xFFFFC857)
-private val Danger = Color(0xFFFF667A)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -284,53 +284,80 @@ class MainActivity : ComponentActivity() {
                 Button(onClick = capture, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Cyan, contentColor = Color.Black)) { Text(if (bitmap == null) "📷 CHỤP PANIC LOG" else "📷 CHỤP LẠI", fontWeight = FontWeight.Black) }
                 Text("EVIDENCE PIPELINE", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 listOf("01  IMAGE CAPTURE" to "Thu ảnh thật", "02  ERROR CODE" to "Tách mã / chuỗi lỗi", "03  KNOWLEDGE" to "Tìm ca tương tự", "04  MEASUREMENT" to "Đề xuất điểm đo").forEach { (title, detail) -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(title, color = MainText, fontSize = 11.sp, fontWeight = FontWeight.Bold); Text(detail, color = Muted, fontSize = 10.sp) } }
-                Text("Lưu ý: màn hình này hiện đã có capture/preview; bộ phân tích Vision local sẽ được nối vào pipeline ở bước tiếp theo.", color = Warn, fontSize = 10.sp)
+                Text("Vision engine: local/offline pipeline sẽ nối vào bước phân tích tiếp theo.", color = Muted, fontSize = 10.sp)
             }
         }
         Spacer(Modifier.height(18.dp))
     }
 
     @Composable private fun ImsScreen(evidence: String, busy: Boolean, volte: Boolean, vowifi: Boolean, vonr: Boolean, setVolte: (Boolean) -> Unit, setVowifi: (Boolean) -> Unit, setVonr: (Boolean) -> Unit, read: () -> Unit, apply: () -> Unit, restore: () -> Unit, verify: () -> Unit) {
-        Section("IMS CONTROL", "READ → PATCH → RESET IMS → VERIFY")
+        Section("IMS INTELLIGENCE", "READ → PATCH → RESET → VERIFY")
         Card(Modifier.fillMaxWidth().padding(horizontal = 14.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
-            Column(Modifier.padding(16.dp)) {
-                Toggle("VoLTE", volte, setVolte); Toggle("VoWiFi", vowifi, setVowifi); Toggle("VoNR", vonr, setVonr); Spacer(Modifier.height(10.dp))
-                Button(onClick = apply, enabled = !busy, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("APPLY + RESET IMS") }
-                Spacer(Modifier.height(6.dp)); OutlinedButton(onClick = verify, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("VERIFY CONFIG") }
-                Spacer(Modifier.height(6.dp)); OutlinedButton(onClick = restore, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("RESTORE OVERRIDE") }
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Toggle("VoLTE", volte, setVolte); Toggle("VoWiFi", vowifi, setVowifi); Toggle("VoNR", vonr, setVonr)
+                Button(onClick = apply, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("APPLY + RESET IMS") }
+                OutlinedButton(onClick = verify, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("VERIFY CONFIG") }
+                OutlinedButton(onClick = restore, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("RESTORE OVERRIDE") }
             }
         }
-        Spacer(Modifier.height(10.dp)); Section("LIVE EVIDENCE", "CarrierConfig thật từ thiết bị"); Button(onClick = read, enabled = !busy, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)) { Text(if (busy) "READING..." else "READ ALL CARRIER CONFIG") }; Evidence(evidence); Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(10.dp))
+        Button(onClick = read, enabled = !busy, modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)) { Text(if (busy) "READING..." else "READ ALL CARRIER CONFIG") }
+        Evidence(evidence)
     }
 
     @Composable private fun ToolsScreen(adb: String, busy: Boolean, run: (String, String) -> Unit) {
         Section("TECH TOOLS", "Shell evidence trực tiếp")
-        listOf("IMS SERVICE" to "dumpsys ims", "TELEPHONY REGISTRY" to "dumpsys telephony.registry", "CARRIER CONFIG" to "dumpsys carrier_config", "RADIO" to "dumpsys radio", "PROPERTIES" to "getprop").forEach { (name, command) -> OutlinedButton(onClick = { run(name, command) }, enabled = !busy && adb.contains("ONLINE"), modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) { Text(name) } }
-        Spacer(Modifier.height(18.dp))
-    }
-
-    @Composable private fun ActionTile(icon: String, title: String, detail: String, action: () -> Unit, modifier: Modifier) {
-        Card(onClick = action, modifier = modifier, colors = CardDefaults.cardColors(containerColor = Panel2), shape = RoundedCornerShape(14.dp)) { Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(icon, fontSize = 22.sp); Text(title, color = MainText, fontWeight = FontWeight.Black, fontSize = 12.sp); Text(detail, color = Muted, fontSize = 9.sp) } }
-    }
-
-    @Composable private fun MetricCard(label: String, value: String, color: Color, modifier: Modifier) {
-        Column(modifier.background(Color(0xFF0B1118), RoundedCornerShape(10.dp)).padding(10.dp)) { Text(label, color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold); Text(value, color = color, fontSize = 11.sp, fontWeight = FontWeight.Black) }
-    }
-
-    @Composable private fun Section(title: String, subtitle: String) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp)) { Text(title, color = MainText, fontSize = 13.sp, fontWeight = FontWeight.Black, letterSpacing = 0.7.sp); Text(subtitle, color = Muted, fontSize = 10.sp) }
-    }
-
-    @Composable private fun Data(label: String, value: String) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text(label, color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold); Text(value.take(42), color = MainText, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+        listOf("IMS SERVICE" to "dumpsys ims", "TELEPHONY REGISTRY" to "dumpsys telephony.registry", "CARRIER CONFIG" to "dumpsys carrier_config", "RADIO" to "dumpsys radio", "PROPERTIES" to "getprop").forEach { (name, command) ->
+            OutlinedButton(onClick = { run(name, command) }, enabled = !busy && adb.contains("ONLINE"), modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 3.dp)) { Text(name) }
+        }
     }
 
     @Composable private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Column { Text(label, color = MainText, fontWeight = FontWeight.Bold, fontSize = 13.sp); Text(if (value) "ENABLED" else "DISABLED", color = if (value) Good else Danger, fontSize = 9.sp) }; Switch(checked = value, onCheckedChange = onChange) }
+        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = MainText, fontWeight = FontWeight.Bold)
+            Switch(checked = value, onCheckedChange = onChange)
+        }
+    }
+
+    @Composable private fun MetricCard(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+        Card(modifier, colors = CardDefaults.cardColors(containerColor = Panel2)) {
+            Column(Modifier.padding(12.dp)) {
+                Text(label, color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Text(value, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Black)
+            }
+        }
+    }
+
+    @Composable private fun ActionTile(icon: String, title: String, detail: String, action: () -> Unit, modifier: Modifier = Modifier) {
+        Card(modifier, onClick = action, colors = CardDefaults.cardColors(containerColor = Panel2)) {
+            Column(Modifier.padding(13.dp)) {
+                Text(icon, fontSize = 22.sp)
+                Spacer(Modifier.height(5.dp))
+                Text(title, color = MainText, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                Text(detail, color = Muted, fontSize = 9.sp)
+            }
+        }
+    }
+
+    @Composable private fun Section(title: String, subtitle: String) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(title, color = MainText, fontSize = 14.sp, fontWeight = FontWeight.Black)
+            Text(subtitle, color = Muted, fontSize = 10.sp)
+        }
+    }
+
+    @Composable private fun Data(label: String, value: String) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(value, color = MainText, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
     }
 
     @Composable private fun Evidence(text: String) {
-        if (text.isBlank()) return
-        Card(Modifier.fillMaxWidth().padding(14.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF080B0F))) { Text(text, color = Color(0xFFB8C4D0), fontSize = 9.sp, modifier = Modifier.padding(12.dp)) }
+        if (text.isNotBlank()) {
+            Card(Modifier.fillMaxWidth().padding(14.dp), colors = CardDefaults.cardColors(containerColor = Panel2)) {
+                Text(text, color = MainText, fontSize = 10.sp, modifier = Modifier.padding(12.dp))
+            }
+        }
     }
 }
