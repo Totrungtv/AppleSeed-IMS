@@ -1,8 +1,7 @@
 package vn.appleseed.ims
-import android.annotation.SuppressLint
-import androidx.activity.compose.setContent
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -10,99 +9,432 @@ import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import rikka.shizuku.Shizuku
+
 class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { App() } }
 
-    private fun phonePermission() = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { AppleSeedImsApp() }
+    }
+
+    private fun phonePermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) ==
+            PackageManager.PERMISSION_GRANTED
+
     @SuppressLint("MissingPermission")
-
     private fun snapshot(): DeviceSnapshot {
         val tm = getSystemService(TelephonyManager::class.java)
         val sm = getSystemService(SubscriptionManager::class.java)
-        fun safe(block: () -> String) = runCatching(block).getOrDefault("--").ifBlank { "--" }
-        fun nt(type: Int) = when (type) {
+
+        fun safe(block: () -> String): String =
+            runCatching { block() }.getOrDefault("--").ifBlank { "--" }
+
+        fun networkType(type: Int): String = when (type) {
             TelephonyManager.NETWORK_TYPE_LTE -> "LTE / 4G"
             TelephonyManager.NETWORK_TYPE_NR -> "NR / 5G"
             TelephonyManager.NETWORK_TYPE_UMTS -> "UMTS / 3G"
             TelephonyManager.NETWORK_TYPE_GSM -> "GSM / 2G"
             else -> "Unknown ($type)"
         }
-        return DeviceSnapshot(Build.MANUFACTURER, Build.MODEL, Build.VERSION.RELEASE, Build.VERSION.SDK_INT,
-            safe { tm.networkOperatorName }, safe { tm.networkOperator },
-            nt(runCatching { tm.dataNetworkType }.getOrDefault(0)),
-            nt(runCatching { tm.voiceNetworkType }.getOrDefault(0)),
-            runCatching { sm.activeSubscriptionInfoList?.size ?: 0 }.getOrDefault(0))
+
+        return DeviceSnapshot(
+            manufacturer = Build.MANUFACTURER,
+            model = Build.MODEL,
+            android = Build.VERSION.RELEASE,
+            sdk = Build.VERSION.SDK_INT,
+            carrier = safe { tm.networkOperatorName },
+            mccmnc = safe { tm.networkOperator },
+            dataNetwork = networkType(runCatching { tm.dataNetworkType }.getOrDefault(0)),
+            voiceNetwork = networkType(runCatching { tm.voiceNetworkType }.getOrDefault(0)),
+            simCount = runCatching { sm.activeSubscriptionInfoList?.size ?: 0 }.getOrDefault(0)
+        )
     }
 
-    @Composable private fun App() {
+    @Composable
+    private fun AppleSeedImsApp() {
         var tab by remember { mutableIntStateOf(0) }
         var snap by remember { mutableStateOf<DeviceSnapshot?>(null) }
         var raw by remember { mutableStateOf("") }
-        var diagnosis by remember { mutableStateOf("Chưa chạy chẩn đoán.") }
-        var shizuku by remember { mutableStateOf(shizukuText()) }
+        var diagnosis by remember { mutableStateOf("Chưa có phiên chẩn đoán.") }
         var permission by remember { mutableStateOf(phonePermission()) }
-        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok -> permission = ok; if (ok) snap = snapshot() }
+        var shizukuStatus by remember { mutableStateOf(ShizukuShell.status()) }
+        val launcher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            permission = granted
+            if (granted) snap = snapshot()
+        }
+
+        val tabs = listOf("TỔNG QUAN", "IMS", "CARRIER", "TOOLS")
 
         MaterialTheme {
-            Surface(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("🍎 APPLE SEED IMS", style = MaterialTheme.typography.headlineSmall)
-                        Text("Professional IMS / VoLTE diagnostic workstation")
-                    }
-                    TabRow(selectedTabIndex = tab) {
-                        listOf("TỔNG QUAN", "IMS", "CARRIER", "TOOLS").forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }) }
-                    }
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        when (tab) {
-                            0 -> Overview(snap, permission, launcher, shizuku) { snap = snapshot(); shizuku = shizukuText() }
-                            1 -> ImsPanel(raw, diagnosis, shizuku) { action ->
-                                raw = when (action) { "IMS" -> ShizukuShell.collectImsDump(); "REG" -> ShizukuShell.collectTelephonyRegistry(); else -> ShizukuShell.collectAll() }
-                                diagnosis = ImsDiagnostics.classify(ImsDiagnostics.parseDump(raw))
-                            }
-                            2 -> CarrierPanel(raw) { raw = ShizukuShell.collectCarrierConfig() }
-                            3 -> ToolsPanel(shizuku) { shizuku = shizukuText(); raw = ShizukuShell.collectAll(); diagnosis = ImsDiagnostics.classify(ImsDiagnostics.parseDump(raw)) }
+            Scaffold(
+                containerColor = Color(0xFF0B0D10),
+                bottomBar = {
+                    NavigationBar(
+                        modifier = Modifier.navigationBarsPadding(),
+                        containerColor = Color(0xFF12161B)
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            NavigationBarItem(
+                                selected = tab == index,
+                                onClick = { tab = index },
+                                icon = { Text(listOf("⌂", "◎", "▣", "⚙")[index]) },
+                                label = { Text(title, maxLines = 1) }
+                            )
                         }
-                        Text("Evidence-first: không kết luận VoLTE chỉ dựa vào có 4G. Cần phân biệt data, IMS registration và voice call.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            ) { padding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Header(shizukuStatus)
+
+                    when (tab) {
+                        0 -> OverviewScreen(
+                            snapshot = snap,
+                            permission = permission,
+                            shizukuStatus = shizukuStatus,
+                            requestPermission = { launcher.launch(Manifest.permission.READ_PHONE_STATE) },
+                            scan = {
+                                if (permission) snap = snapshot()
+                                shizukuStatus = ShizukuShell.status()
+                            },
+                            connectShizuku = {
+                                shizukuStatus = ShizukuShell.connect()
+                            }
+                        )
+
+                        1 -> ImsScreen(
+                            raw = raw,
+                            diagnosis = diagnosis,
+                            shizukuStatus = shizukuStatus,
+                            runScan = { action ->
+                                raw = when (action) {
+                                    "IMS" -> ShizukuShell.collectImsDump()
+                                    "REG" -> ShizukuShell.collectTelephonyRegistry()
+                                    else -> ShizukuShell.collectAll()
+                                }
+                                diagnosis = ImsDiagnostics.classify(ImsDiagnostics.parseDump(raw))
+                                shizukuStatus = ShizukuShell.status()
+                            }
+                        )
+
+                        2 -> CarrierScreen(
+                            raw = raw,
+                            run = {
+                                raw = ShizukuShell.collectCarrierConfig()
+                                shizukuStatus = ShizukuShell.status()
+                            }
+                        )
+
+                        3 -> ToolsScreen(
+                            status = shizukuStatus,
+                            run = {
+                                raw = ShizukuShell.collectAll()
+                                diagnosis = ImsDiagnostics.classify(ImsDiagnostics.parseDump(raw))
+                                shizukuStatus = ShizukuShell.status()
+                                tab = 1
+                            }
+                        )
                     }
                 }
             }
         }
     }
 
-    @Composable private fun Overview(s: DeviceSnapshot?, permission: Boolean, launcher: androidx.activity.result.ActivityResultLauncher<String>, shizuku: String, refresh: () -> Unit) {
-        Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("DEVICE", style = MaterialTheme.typography.titleMedium); Text("Model: ${s?.model ?: Build.MODEL}"); Text("Manufacturer: ${s?.manufacturer ?: Build.MANUFACTURER}"); Text("Android: ${s?.android ?: Build.VERSION.RELEASE}"); Text("SDK: ${s?.sdk ?: Build.VERSION.SDK_INT}") } }
-        Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("SIM / NETWORK", style = MaterialTheme.typography.titleMedium); Text("SIM: ${s?.simCount ?: "--"}"); Text("Carrier: ${s?.carrier ?: "--"}"); Text("MCC/MNC: ${s?.mccmnc ?: "--"}"); Text("Data: ${s?.dataNetwork ?: "--"}"); Text("Voice: ${s?.voiceNetwork ?: "--"}") } }
-        Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("ACCESS", style = MaterialTheme.typography.titleMedium); Text(if (permission) "READ_PHONE_STATE: OK" else "READ_PHONE_STATE: CHƯA CẤP"); Text(shizuku); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { if (!permission) Button({ launcher.launch(Manifest.permission.READ_PHONE_STATE) }) { Text("CẤP QUYỀN") }; Button({ refresh() }, Modifier.weight(1f)) { Text("QUÉT THIẾT BỊ") } } } }
+    @Composable
+    private fun Header(status: String) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF11151A))
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Color(0xFFE9EDF2)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("🍎", style = MaterialTheme.typography.titleLarge)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("APPLE SEED", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("IMS DIAGNOSTIC WORKSTATION", color = Color(0xFF9AA5B1), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            StatusPill(status)
+        }
     }
 
-    @Composable private fun ImsPanel(raw: String, diagnosis: String, shizuku: String, run: (String) -> Unit) {
-        Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("IMS DIAGNOSTICS", style = MaterialTheme.typography.titleMedium); Text(shizuku); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { Button({ run("IMS") }, Modifier.weight(1f)) { Text("IMS") }; Button({ run("REG") }, Modifier.weight(1f)) { Text("REGISTRY") }; Button({ run("ALL") }, Modifier.weight(1f)) { Text("DEEP SCAN") } } } }
-        if (raw.isNotBlank()) Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { ImsDiagnostics.parseDump(raw).forEach { StatusRow(it.name, it.state) }; HorizontalDivider(); Text(diagnosis); Text(raw.takeLast(8000), style = MaterialTheme.typography.bodySmall) } }
-        else Card { Column(Modifier.padding(16.dp)) { Text("IMS Registration: UNKNOWN"); Text("VoLTE: UNKNOWN"); Text("VoWiFi: UNKNOWN"); Text("VoNR: UNKNOWN") } }
+    @Composable
+    private fun StatusPill(status: String) {
+        val good = status.contains("ONLINE")
+        val textColor = if (good) Color(0xFF6EE7B7) else Color(0xFFFFC66D)
+        Text(
+            text = "●  $status",
+            color = textColor,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1A2027))
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        )
     }
 
-    @Composable private fun CarrierPanel(raw: String, run: () -> Unit) {
-        Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("CARRIER CONFIG", style = MaterialTheme.typography.titleMedium); Text("Đọc cấu hình hiện tại trước khi nghĩ tới override."); Button(run, Modifier.fillMaxWidth()) { Text("ĐỌC CARRIER CONFIG") } } }
-        if (raw.isNotBlank()) Card { Column(Modifier.padding(16.dp)) { Text(raw.takeLast(10000), style = MaterialTheme.typography.bodySmall) } }
+    @Composable
+    private fun OverviewScreen(
+        snapshot: DeviceSnapshot?,
+        permission: Boolean,
+        shizukuStatus: String,
+        requestPermission: () -> Unit,
+        scan: () -> Unit,
+        connectShizuku: () -> Unit
+    ) {
+        SectionTitle("DEVICE OVERVIEW", "Thông tin nền trước khi phân tích IMS")
+        InfoCard("THIẾT BỊ") {
+            DataRow("Model", snapshot?.model ?: Build.MODEL)
+            DataRow("Hãng", snapshot?.manufacturer ?: Build.MANUFACTURER)
+            DataRow("Android", snapshot?.android ?: Build.VERSION.RELEASE)
+            DataRow("SDK", snapshot?.sdk?.toString() ?: Build.VERSION.SDK_INT.toString())
+        }
+        InfoCard("SIM / NETWORK") {
+            DataRow("SIM active", snapshot?.simCount?.toString() ?: "--")
+            DataRow("Carrier", snapshot?.carrier ?: "--")
+            DataRow("MCC/MNC", snapshot?.mccmnc ?: "--")
+            DataRow("Data", snapshot?.dataNetwork ?: "--")
+            DataRow("Voice", snapshot?.voiceNetwork ?: "--")
+        }
+        InfoCard("ACCESS") {
+            DataRow("READ_PHONE_STATE", if (permission) "OK" else "CHƯA CẤP")
+            DataRow("Shizuku", shizukuStatus)
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!permission) {
+                    Button(onClick = requestPermission, modifier = Modifier.weight(1f)) {
+                        Text("CẤP QUYỀN")
+                    }
+                }
+                OutlinedButton(onClick = connectShizuku, modifier = Modifier.weight(1f)) {
+                    Text("KẾT NỐI SHIZUKU")
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = scan, modifier = Modifier.fillMaxWidth()) {
+                Text("QUÉT THIẾT BỊ")
+            }
+        }
+        EvidenceNote()
     }
 
-    @Composable private fun ToolsPanel(shizuku: String, run: () -> Unit) {
-        Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("TECH TOOLS", style = MaterialTheme.typography.titleMedium); Text(shizuku); Button(run, Modifier.fillMaxWidth()) { Text("THU THẬP FULL IMS DUMP") }; Text("V3 sẽ thêm profile carrier, snapshot/rollback và apply có kiểm chứng. Không thực hiện hidden API override mù.", style = MaterialTheme.typography.bodySmall) } }
+    @Composable
+    private fun ImsScreen(
+        raw: String,
+        diagnosis: String,
+        shizukuStatus: String,
+        runScan: (String) -> Unit
+    ) {
+        SectionTitle("IMS DIAGNOSTICS", "Tách data network khỏi IMS registration và voice")
+        InfoCard("IMS CONTROL") {
+            DataRow("Shizuku", shizukuStatus)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                SmallAction("IMS", { runScan("IMS") }, Modifier.weight(1f))
+                SmallAction("REGISTRY", { runScan("REG") }, Modifier.weight(1f))
+                SmallAction("DEEP SCAN", { runScan("ALL") }, Modifier.weight(1f))
+            }
+        }
+
+        if (raw.isBlank()) {
+            InfoCard("IMS STATUS") {
+                DataRow("IMS Registration", "UNKNOWN")
+                DataRow("VoLTE", "UNKNOWN")
+                DataRow("VoWiFi", "UNKNOWN")
+                DataRow("VoNR", "UNKNOWN")
+            }
+        } else {
+            InfoCard("EVIDENCE") {
+                ImsDiagnostics.parseDump(raw).forEach { result ->
+                    DataRow(result.name, result.state)
+                }
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
+                Text(diagnosis, color = Color(0xFFD9E2EC))
+            }
+            InfoCard("RAW DUMP") {
+                Text(
+                    raw.takeLast(9000),
+                    color = Color(0xFF9FB0C0),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+        EvidenceNote()
     }
 
-    @Composable private fun StatusRow(a: String, b: String) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(a); Text(b) } }
-    private fun shizukuText() = runCatching { when { !Shizuku.pingBinder() -> "Shizuku: CHƯA KẾT NỐI"; Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED -> "Shizuku: CONNECTED + AUTHORIZED"; else -> "Shizuku: CONNECTED, CHƯA CẤP QUYỀN" } }.getOrElse { "Shizuku: unavailable" }
+    @Composable
+    private fun CarrierScreen(raw: String, run: () -> Unit) {
+        SectionTitle("CARRIER CONFIG", "Đọc cấu hình hiện tại trước khi thay đổi bất kỳ profile nào")
+        InfoCard("CARRIER PROFILE") {
+            Text(
+                "Apple Seed chỉ đọc evidence trước. Không override mù.",
+                color = Color(0xFFAAB7C4)
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = run, modifier = Modifier.fillMaxWidth()) {
+                Text("ĐỌC CARRIER CONFIG")
+            }
+        }
+        if (raw.isNotBlank()) {
+            InfoCard("CONFIG DUMP") {
+                Text(
+                    raw.takeLast(10000),
+                    color = Color(0xFF9FB0C0),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun ToolsScreen(status: String, run: () -> Unit) {
+        SectionTitle("TECH TOOLS", "Bộ công cụ thu thập evidence cho kỹ thuật viên")
+        InfoCard("SHIZUKU") {
+            DataRow("Status", status)
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = run, modifier = Modifier.fillMaxWidth()) {
+                Text("THU THẬP FULL IMS DUMP")
+            }
+        }
+        InfoCard("WORKFLOW") {
+            DataRow("01", "Device / SIM / Network")
+            DataRow("02", "IMS registration")
+            DataRow("03", "Carrier Config")
+            DataRow("04", "Raw evidence")
+            DataRow("05", "Technical conclusion")
+        }
+    }
+
+    @Composable
+    private fun SectionTitle(title: String, subtitle: String) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, color = Color(0xFF8996A3), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    @Composable
+    private fun InfoCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 5.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF151A20))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+                content = {
+                    Text(title, color = Color(0xFF8EA2B5), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    content()
+                }
+            )
+        }
+    }
+
+    @Composable
+    private fun DataRow(label: String, value: String) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = Color(0xFFAAB7C4))
+            Text(value, color = Color.White, fontWeight = FontWeight.Medium)
+        }
+    }
+
+    @Composable
+    private fun SmallAction(text: String, action: () -> Unit, modifier: Modifier) {
+        OutlinedButton(onClick = action, modifier = modifier) {
+            Text(text, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+
+    @Composable
+    private fun EvidenceNote() {
+        TextButton(
+            onClick = {},
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 2.dp)
+        ) {
+            Text(
+                "Evidence-first • 4G data ≠ IMS Registered ≠ VoLTE call",
+                color = Color(0xFF718191),
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
 }
 
-data class DeviceSnapshot(val manufacturer: String, val model: String, val android: String, val sdk: Int, val carrier: String, val mccmnc: String, val dataNetwork: String, val voiceNetwork: String, val simCount: Int)
+data class DeviceSnapshot(
+    val manufacturer: String,
+    val model: String,
+    val android: String,
+    val sdk: Int,
+    val carrier: String,
+    val mccmnc: String,
+    val dataNetwork: String,
+    val voiceNetwork: String,
+    val simCount: Int
+)
