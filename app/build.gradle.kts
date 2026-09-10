@@ -5,7 +5,9 @@ plugins {
 
 android {
     namespace = "vn.appleseed.ims"
-    compileSdk { version = release(37) }
+    compileSdk {
+        version = release(37)
+    }
 
     defaultConfig {
         applicationId = "vn.appleseed.ims"
@@ -16,12 +18,15 @@ android {
     }
 
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+        }
     }
 
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
 }
 
