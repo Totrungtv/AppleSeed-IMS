@@ -13,9 +13,7 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.lang.reflect.Method
 
 class BrokerInstrumentation : Instrumentation() {
-    companion object {
-        private const val TAG = "AppleSeedBroker"
-    }
+    companion object { private const val TAG = "AppleSeedBroker" }
 
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
@@ -41,10 +39,10 @@ class BrokerInstrumentation : Instrumentation() {
     }
 
     private fun applyAll() {
-        val subManager = getSystemService(SubscriptionManager::class.java) ?: return
-        val carrier = getSystemService(CarrierConfigManager::class.java) ?: return
-        val telephony = getSystemService(TelephonyManager::class.java) ?: return
-        val prefs = getSharedPreferences("apple_seed_ims", Context.MODE_PRIVATE)
+        val subManager = service(SubscriptionManager::class.java) ?: return
+        val carrier = service(CarrierConfigManager::class.java) ?: return
+        val telephony = service(TelephonyManager::class.java) ?: return
+        val prefs = targetContext.getSharedPreferences("apple_seed_ims", Context.MODE_PRIVATE)
         val subs = runCatching { subManager.activeSubscriptionInfoList ?: emptyList() }.getOrDefault(emptyList())
 
         for (info in subs) {
@@ -57,56 +55,44 @@ class BrokerInstrumentation : Instrumentation() {
                 putBoolean("editable_enhanced_4g_lte_bool", true)
                 putBoolean("carrier_volte_provisioned_bool", true)
                 putBoolean("carrier_volte_provisioning_required_bool", false)
-
                 putBoolean("vonr_enabled_bool", prefs.getBoolean("vonr", true))
                 putBoolean("vonr_setting_visibility_bool", prefs.getBoolean("vonr", true))
-
                 putBoolean("carrier_wfc_ims_available_bool", prefs.getBoolean("vowifi", true))
                 putBoolean("carrier_default_wfc_ims_enabled_bool", prefs.getBoolean("vowifi", true))
                 putBoolean("carrier_wfc_ims_provisioned_bool", prefs.getBoolean("vowifi", true))
                 putBoolean("editable_wfc_mode_bool", prefs.getBoolean("vowifi", true))
                 putBoolean("editable_wfc_roaming_mode_bool", prefs.getBoolean("vowifi", true))
                 putBoolean("carrier_default_wfc_ims_roaming_enabled_bool", true)
-
                 putBoolean("carrier_supports_ss_over_ut_bool", true)
                 putBoolean("show_ims_registration_status_bool", true)
             }
-
             invokeOverrideConfig(carrier, subId, config)
-            runCatching {
-                val reset = findMethod(telephony, "resetIms")
-                if (reset != null) {
-                    when (reset.parameterTypes.size) {
-                        1 -> reset.invoke(telephony, slot)
-                        2 -> reset.invoke(telephony, slot, false)
-                    }
-                }
-            }
-
+            resetIms(telephony, slot)
             FileStore.write(filesDir, slot, "APPLIED")
         }
     }
 
     private fun restoreAll() {
-        val subManager = getSystemService(SubscriptionManager::class.java) ?: return
-        val carrier = getSystemService(CarrierConfigManager::class.java) ?: return
-        val telephony = getSystemService(TelephonyManager::class.java) ?: return
+        val subManager = service(SubscriptionManager::class.java) ?: return
+        val carrier = service(CarrierConfigManager::class.java) ?: return
+        val telephony = service(TelephonyManager::class.java) ?: return
         val subs = runCatching { subManager.activeSubscriptionInfoList ?: emptyList() }.getOrDefault(emptyList())
-
         for (info in subs) {
             val subId = info.subscriptionId
             val slot = info.simSlotIndex
             invokeOverrideConfig(carrier, subId, null)
-            runCatching {
-                val reset = findMethod(telephony, "resetIms")
-                if (reset != null) {
-                    when (reset.parameterTypes.size) {
-                        1 -> reset.invoke(telephony, slot)
-                        2 -> reset.invoke(telephony, slot, false)
-                    }
-                }
-            }
+            resetIms(telephony, slot)
             FileStore.write(filesDir, slot, "RESTORED")
+        }
+    }
+
+    private fun resetIms(telephony: TelephonyManager, slot: Int) {
+        runCatching {
+            val reset = findMethod(telephony, "resetIms") ?: return
+            when (reset.parameterTypes.size) {
+                1 -> reset.invoke(telephony, slot)
+                2 -> reset.invoke(telephony, slot, false)
+            }
         }
     }
 
@@ -131,7 +117,7 @@ class BrokerInstrumentation : Instrumentation() {
         return null
     }
 
-    private fun getSystemService(clazz: Class<*>): Any? =
+    private fun <T> service(clazz: Class<T>): T? =
         runCatching { targetContext.getSystemService(clazz) }.getOrNull()
 
     private object FileStore {
