@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
                 title = { Text("PAIR WIRELESS DEBUGGING") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Android đang mở Pair device with pairing code. Giữ cửa sổ mã 6 số mở, nhập mã vào đây rồi bấm PAIR.", color = Muted)
+                        Text("Nhập mã 6 số đang hiện trong Pair device with pairing code rồi bấm PAIR.", color = Muted)
                         OutlinedTextField(
                             value = pairCode,
                             onValueChange = { pairCode = it.filter(Char::isDigit).take(6) },
@@ -174,11 +174,9 @@ class MainActivity : ComponentActivity() {
                             requestPermission = { permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) },
                             openSettings = { openWirelessDebugging() },
                             pair = {
-                                adb = "PREPARING PAIRING..."
+                                adb = "READY FOR 6-DIGIT PAIRING CODE"
                                 pairCode = ""
-                                LocalAdbEngine.preparePairing()
                                 pairDialog = true
-                                openWirelessDebugging()
                             },
                             reconnect = {
                                 adb = "CONNECTING..."
@@ -266,7 +264,7 @@ class MainActivity : ComponentActivity() {
         Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 GuideRow("1", "BẬT WIRELESS DEBUGGING", "Trên điện thoại: Developer options → Wireless debugging → ON.")
-                GuideRow("2", "PAIR LẦN ĐẦU", "Bấm PAIR WIRELESS DEBUGGING trong app → Android mở Pair device with pairing code → nhập mã 6 số.")
+                GuideRow("2", "PAIR LẦN ĐẦU", "Mở Wireless debugging bằng nút bên trên → chọn Pair device with pairing code → giữ mã 6 số → quay lại Apple Seed → bấm PAIR WIRELESS DEBUGGING.")
                 GuideRow("3", "KẾT NỐI", "Sau khi Pair thành công, app tự tìm cổng ADB và kết nối. Chờ trạng thái WIRELESS ADB ONLINE.")
                 GuideRow("4", "LẦN SAU", "Không cần Pair lại. Bấm RECONNECT ĐÃ PAIR nếu máy chưa tự kết nối.")
                 GuideRow("5", "ĐỌC DỮ LIỆU", "Vào CARRIER → READ ALL CARRIER CONFIG để đọc cấu hình SIM.")
