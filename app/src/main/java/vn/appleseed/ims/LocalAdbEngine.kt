@@ -19,7 +19,7 @@ object LocalAdbEngine {
     private const val PAIRING_SERVICE = "_adb-tls-pairing._tcp"
     private const val CONNECT_SERVICE = "_adb-tls-connect._tcp"
     private const val PREFS = "apple_seed_adb"
-
+    private const val RESULT_FILE = "apple_seed_carrier_result.txt"
     private var appContext: Context? = null
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
@@ -29,151 +29,98 @@ object LocalAdbEngine {
     fun init(context: Context) {
         val ctx = context.applicationContext
         appContext = ctx
-        if (configured.compareAndSet(false, true)) {
-            try {
-                val keyFile = File(ctx.filesDir, "apple_seed_kadb_private_key.pem")
-                KadbCert.configure(
-                    store = OkioFilePrivateKeyStore(keyFile.absolutePath.toPath()),
-                    policy = KadbCertPolicy(),
-                    additionalPrivateKeysPem = emptyList()
-                )
-                KadbCert.ensureReady()
-            } catch (e: Exception) {
-                Log.e(TAG, "Kadb certificate initialization failed", e)
-            }
-        }
+        if (configured.compareAndSet(false, true)) runCatching {
+            val keyFile = File(ctx.filesDir, "apple_seed_kadb_private_key.pem")
+            KadbCert.configure(
+                store = OkioFilePrivateKeyStore(keyFile.absolutePath.toPath()),
+                policy = KadbCertPolicy(),
+                additionalPrivateKeysPem = emptyList()
+            )
+            KadbCert.ensureReady()
+        }.onFailure { Log.e(TAG, "Kadb certificate initialization failed", it) }
     }
 
-    fun status(): String {
-        if (activeKadb != null) return "WIRELESS ADB ONLINE"
-        if (connectPort != null) return "PAIRED — READY TO CONNECT"
-        return "WIRELESS DEBUGGING OFFLINE"
+    fun status(): String = when {
+        activeKadb != null -> "WIRELESS ADB ONLINE"
+        connectPort != null -> "PAIRED — READY TO CONNECT"
+        else -> "WIRELESS DEBUGGING OFFLINE"
     }
 
     fun hasConnection(): Boolean = activeKadb != null
 
-    fun openWirelessDebuggingSettings(context: Context) {
-        runCatching {
-            context.startActivity(android.content.Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
-        }
+    fun openWirelessDebuggingSettings(context: Context) = runCatching {
+        context.startActivity(android.content.Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
     }
 
-    fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
+    fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) =
+        discover(PAIRING_SERVICE, onFound, onError) { pairingPort = it.port }
+
+    fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) =
+        discover(CONNECT_SERVICE, onFound, onError) { connectPort = it.port }
+
+    private fun discover(serviceType: String, onFound: (Int) -> Unit, onError: (String) -> Unit, save: (NsdServiceInfo) -> Unit) {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String?) = Unit
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                if (serviceInfo.serviceType?.contains(PAIRING_SERVICE) != true) return
-                try {
+                if (serviceInfo.serviceType?.contains(serviceType) != true) return
+                runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
-                            onError("Không resolve được cổng pairing ($errorCode)")
-                        }
+                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) =
+                            onError("Không resolve được ADB service ($errorCode)")
                         override fun onServiceResolved(info: NsdServiceInfo) {
-                            pairingPort = info.port
+                            save(info)
                             onFound(info.port)
                         }
                     })
-                } catch (e: Exception) {
-                    onError("Resolve pairing lỗi: ${e.message}")
-                }
+                }.onFailure { onError("Resolve service lỗi: ${it.message}") }
             }
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
             override fun onDiscoveryStopped(serviceType: String?) = Unit
-            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
-                onError("Wireless Debugging chưa quảng bá pairing service ($errorCode)")
-            }
+            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) =
+                onError("Wireless Debugging service không khả dụng ($errorCode)")
             override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
         }
-        try {
-            nsd.discoverServices(PAIRING_SERVICE, NsdManager.PROTOCOL_DNS_SD, listener)
-        } catch (e: Exception) {
-            onError("Không bắt đầu được mDNS: ${e.message}")
-        }
+        runCatching { nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener) }
+            .onFailure { onError("Không bắt đầu được mDNS: ${it.message}") }
     }
 
     fun pair(code: String, onDone: (Boolean, String) -> Unit) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val port = pairingPort ?: return onDone(false, "Chưa tìm thấy pairing port")
         Thread {
-            try {
-                runBlocking {
-                    Kadb.pair("127.0.0.1", port, code.trim(), "Apple Seed IMS")
-                }
+            runCatching {
+                runBlocking { Kadb.pair("127.0.0.1", port, code.trim(), "Apple Seed IMS") }
                 discoverConnectPort(
-                    onFound = { foundPort ->
-                        connectPort = foundPort
-                        onDone(true, "PAIR OK — connect port $foundPort")
-                    },
+                    onFound = { found -> onDone(true, "PAIR OK — connect port $found") },
                     onError = { error -> onDone(false, error) }
                 )
-            } catch (e: Exception) {
-                onDone(false, "PAIR FAILED: ${e.message ?: e.javaClass.simpleName}")
-            }
+            }.onFailure { onDone(false, "PAIR FAILED: ${it.message ?: it.javaClass.simpleName}") }
         }.start()
-    }
-
-    fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
-        val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
-        val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
-        val listener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(serviceType: String?) = Unit
-            override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                if (serviceInfo.serviceType?.contains(CONNECT_SERVICE) != true) return
-                try {
-                    nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
-                            onError("Không resolve được ADB port ($errorCode)")
-                        }
-                        override fun onServiceResolved(info: NsdServiceInfo) {
-                            connectPort = info.port
-                            onFound(info.port)
-                        }
-                    })
-                } catch (e: Exception) {
-                    onError("Resolve ADB lỗi: ${e.message}")
-                }
-            }
-            override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
-            override fun onDiscoveryStopped(serviceType: String?) = Unit
-            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
-                onError("Không tìm thấy Wireless Debugging ADB service ($errorCode)")
-            }
-            override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
-        }
-        try {
-            nsd.discoverServices(CONNECT_SERVICE, NsdManager.PROTOCOL_DNS_SD, listener)
-        } catch (e: Exception) {
-            onError("Không bắt đầu được ADB discovery: ${e.message}")
-        }
     }
 
     fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
-        val targetPort = port ?: return discoverConnectPort(
-            onFound = { foundPort -> connect(foundPort, onDone) },
+        val target = port ?: return discoverConnectPort(
+            onFound = { found -> connect(found, onDone) },
             onError = { error -> onDone(false, error) }
         )
         Thread {
-            try {
+            runCatching {
                 activeKadb?.close()
-                activeKadb = Kadb.create("127.0.0.1", targetPort, 15000, 15000)
+                activeKadb = Kadb.create("127.0.0.1", target, 15000, 15000)
                 val probe = activeKadb?.shell("echo APPLE_SEED_ADB_OK")
-                if (probe?.exitCode == 0 && probe.output.contains("APPLE_SEED_ADB_OK")) {
-                    connectPort = targetPort
-                    ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("connect_port", targetPort).apply()
-                    onDone(true, "WIRELESS ADB ONLINE")
-                } else {
-                    activeKadb?.close()
-                    activeKadb = null
-                    onDone(false, "ADB shell probe thất bại")
-                }
-            } catch (e: Exception) {
+                check(probe?.exitCode == 0 && probe.output.contains("APPLE_SEED_ADB_OK")) { "ADB shell probe thất bại" }
+                connectPort = target
+                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("connect_port", target).apply()
+                onDone(true, "WIRELESS ADB ONLINE")
+            }.onFailure {
+                activeKadb?.close()
                 activeKadb = null
-                onDone(false, "ADB CONNECT FAILED: ${e.message ?: e.javaClass.simpleName}")
+                onDone(false, "ADB CONNECT FAILED: ${it.message ?: it.javaClass.simpleName}")
             }
         }.start()
     }
@@ -181,41 +128,38 @@ object LocalAdbEngine {
     fun reconnectSaved(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("connect_port", 0)
-        if (saved > 0) {
-            connect(saved, onDone)
-        } else {
-            discoverConnectPort(
-                onFound = { foundPort -> connect(foundPort, onDone) },
-                onError = { error -> onDone(false, error) }
-            )
-        }
+        if (saved > 0) connect(saved, onDone)
+        else discoverConnectPort(
+            onFound = { found -> connect(found, onDone) },
+            onError = { error -> onDone(false, error) }
+        )
     }
 
     fun shell(command: String): String {
         val adb = activeKadb ?: return "ADB OFFLINE"
-        return try {
+        return runCatching {
             val result = adb.shell(command)
             buildString {
                 append(result.output)
                 if (result.exitCode != 0) append("\n[exit ${result.exitCode}]")
             }.trim()
-        } catch (e: Exception) {
+        }.getOrElse {
             activeKadb = null
-            "ADB SHELL ERROR: ${e.message ?: e.javaClass.simpleName}"
+            "ADB SHELL ERROR: ${it.message ?: it.javaClass.simpleName}"
         }
     }
 
-    fun runInstrumentation(clear: Boolean, onDone: (Boolean, String) -> Unit) {
+    fun runBroker(mode: String, subId: Int = -1, patch: String = "", onDone: (Boolean, String) -> Unit) {
         val adb = activeKadb ?: return onDone(false, "WIRELESS ADB OFFLINE")
         Thread {
-            try {
-                val cmd = "am instrument -w -e clear $clear vn.appleseed.ims/vn.appleseed.ims.BrokerInstrumentation"
+            runCatching {
+                val safePatch = patch.replace("'", "")
+                val cmd = "am instrument -w -e mode $mode -e subId $subId -e patch '$safePatch' vn.appleseed.ims/vn.appleseed.ims.BrokerInstrumentation"
                 val result = adb.shell(cmd)
-                if (result.exitCode == 0) onDone(true, result.output.trim())
-                else onDone(false, "INSTRUMENTATION EXIT ${result.exitCode}: ${result.output.trim()}")
-            } catch (e: Exception) {
-                onDone(false, "INSTRUMENTATION ERROR: ${e.message ?: e.javaClass.simpleName}")
-            }
+                val evidence = adb.shell("cat $RESULT_FILE")
+                if (result.exitCode == 0 && !evidence.startsWith("cat:")) onDone(true, evidence.trim())
+                else onDone(false, "BROKER EXIT ${result.exitCode}: ${result.output.trim()}\n$evidence")
+            }.onFailure { onDone(false, "BROKER ERROR: ${it.message ?: it.javaClass.simpleName}") }
         }.start()
     }
 
