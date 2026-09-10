@@ -79,6 +79,16 @@ class MainActivity : ComponentActivity() {
 
         fun refresh() { adb = LocalAdbEngine.status() }
 
+        fun openWirelessDebugging() {
+            val direct = Intent("android.settings.WIRELESS_DEBUGGING_SETTINGS")
+            runCatching {
+                startActivity(direct)
+            }.onFailure {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                android.widget.Toast.makeText(this@MainActivity, "Kéo xuống Wireless debugging → Pair device with pairing code.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+
         fun broker(mode: String, patch: String = "") {
             if (busy) return
             if (!LocalAdbEngine.hasConnection()) {
@@ -110,7 +120,7 @@ class MainActivity : ComponentActivity() {
                 title = { Text("PAIR WIRELESS DEBUGGING") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("1. Trên điện thoại: Developer options → Wireless debugging → Pair device with pairing code.\n2. Android sẽ hiện mã 6 số. Nhập mã đó vào ô dưới.", color = Muted)
+                        Text("Trong Wireless debugging: bấm Pair device with pairing code. Android sẽ hiện mã 6 số. Nhập mã đó vào đây rồi bấm PAIR.", color = Muted)
                         OutlinedTextField(
                             value = pairCode,
                             onValueChange = { pairCode = it.filter(Char::isDigit).take(6) },
@@ -161,12 +171,12 @@ class MainActivity : ComponentActivity() {
                     when (tab) {
                         0 -> DeviceScreen(permission, adb,
                             requestPermission = { permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) },
-                            openSettings = { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
+                            openSettings = { openWirelessDebugging() },
                             pair = {
                                 adb = "OPENING WIRELESS DEBUGGING..."
                                 pairCode = ""
                                 pairDialog = true
-                                startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                                openWirelessDebugging()
                             },
                             reconnect = {
                                 adb = "CONNECTING..."
@@ -241,7 +251,7 @@ class MainActivity : ComponentActivity() {
                 Data("PHONE PERMISSION", if (permission) "GRANTED" else "NOT GRANTED")
                 Data("ADB", adb)
                 if (!permission) Button(onClick = requestPermission) { Text("CẤP PHONE PERMISSION") }
-                OutlinedButton(onClick = openSettings, modifier = Modifier.fillMaxWidth()) { Text("MỞ DEVELOPER OPTIONS") }
+                OutlinedButton(onClick = openSettings, modifier = Modifier.fillMaxWidth()) { Text("MỞ WIRELESS DEBUGGING") }
                 Button(onClick = pair, modifier = Modifier.fillMaxWidth()) { Text("PAIR WIRELESS DEBUGGING") }
                 OutlinedButton(onClick = reconnect, modifier = Modifier.fillMaxWidth()) { Text("RECONNECT ĐÃ PAIR") }
             }
