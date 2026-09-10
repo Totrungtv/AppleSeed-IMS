@@ -1,7 +1,9 @@
 package vn.appleseed.ims
 
+import android.annotation.SuppressLint
 import android.app.Instrumentation
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.os.PersistableBundle
 import android.telephony.CarrierConfigManager
@@ -19,17 +21,28 @@ class BrokerInstrumentation : Instrumentation() {
         super.onCreate(arguments)
         Thread {
             var automation: UiAutomation? = null
+            var resultCode = 0
             try {
-                HiddenApiBypass.addHiddenApiExemptions("L")
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    throw IllegalStateException("IMS broker requires Android 10 or newer")
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    HiddenApiBypass.addHiddenApiExemptions("L")
+                }
                 automation = getUiAutomation()
-                automation?.adoptShellPermissionIdentity()
+                automation.adoptShellPermissionIdentity()
                 val clear = arguments?.getString("clear") == "true" || arguments?.getBoolean("clear") == true
                 if (clear) restoreAll() else applyAll()
             } catch (e: Exception) {
+                resultCode = 1
                 Log.e(TAG, "Broker failed", e)
             } finally {
-                runCatching { automation?.dropShellPermissionIdentity() }
-                finish(0, Bundle())
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    runCatching { automation?.dropShellPermissionIdentity() }
+                }
+                finish(resultCode, Bundle().apply {
+                    putBoolean("success", resultCode == 0)
+                })
             }
         }.start()
     }
@@ -38,6 +51,7 @@ class BrokerInstrumentation : Instrumentation() {
         runCatching { super.finish(resultCode, results) }
     }
 
+    @SuppressLint("MissingPermission")
     private fun applyAll() {
         val subManager = service(SubscriptionManager::class.java) ?: return
         val carrier = service(CarrierConfigManager::class.java) ?: return
@@ -68,10 +82,11 @@ class BrokerInstrumentation : Instrumentation() {
             }
             invokeOverrideConfig(carrier, subId, config)
             resetIms(telephony, slot)
-            FileStore.write(filesDir, slot, "APPLIED")
+            FileStore.write(targetContext.filesDir, slot, "APPLIED")
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun restoreAll() {
         val subManager = service(SubscriptionManager::class.java) ?: return
         val carrier = service(CarrierConfigManager::class.java) ?: return
@@ -82,7 +97,7 @@ class BrokerInstrumentation : Instrumentation() {
             val slot = info.simSlotIndex
             invokeOverrideConfig(carrier, subId, null)
             resetIms(telephony, slot)
-            FileStore.write(filesDir, slot, "RESTORED")
+            FileStore.write(targetContext.filesDir, slot, "RESTORED")
         }
     }
 
