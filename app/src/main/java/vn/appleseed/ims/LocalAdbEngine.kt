@@ -224,21 +224,6 @@ object LocalAdbEngine {
         connectPort = null
         val cachedPort = pairingPort
 
-        fun waitForPairingPort(attempt: Int = 0) {
-            if (pairingPort != null) {
-                doPair(pairingPort!!, true)
-                return
-            }
-            if (attempt >= 12) {
-                onDone(false, "Không tìm thấy cổng PAIRING. Hãy mở Pair device with pairing code rồi thử lại.")
-                return
-            }
-            Thread {
-                Thread.sleep(500)
-                waitForPairingPort(attempt + 1)
-            }.start()
-        }
-
         fun waitForConnect(attempt: Int = 0) {
             if (attempt >= 12) {
                 onDone(false, "PAIR OK nhưng chưa tìm thấy cổng CONNECT. Hãy giữ Wireless debugging ON rồi thử lại.")
@@ -287,6 +272,21 @@ object LocalAdbEngine {
                         onDone(false, "PAIR FAILED: ${error.message ?: error.javaClass.simpleName}")
                     }
                 }
+            }.start()
+        }
+
+        fun waitForPairingPort(attempt: Int = 0) {
+            if (pairingPort != null) {
+                doPair(pairingPort!!, true)
+                return
+            }
+            if (attempt >= 12) {
+                onDone(false, "Không tìm thấy cổng PAIRING. Hãy mở Pair device with pairing code rồi thử lại.")
+                return
+            }
+            Thread {
+                Thread.sleep(500)
+                waitForPairingPort(attempt + 1)
             }.start()
         }
 
