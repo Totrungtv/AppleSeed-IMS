@@ -12,7 +12,7 @@ import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
 import java.io.File
-import java.util.concurrent.AtomicBoolean
+import java.util.concurrent.atomic.AtomicBoolean
 
 object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
