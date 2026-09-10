@@ -21,7 +21,7 @@ object LocalAdbEngine {
     private const val CONNECT_SERVICE = "_adb-tls-connect._tcp"
     private const val LOOPBACK = "127.0.0.1"
     private const val PREFS = "apple_seed_adb"
-    private const val DISCOVERY_TIMEOUT_MS = 8000L
+    private const val DISCOVERY_TIMEOUT_MS = 30000L
 
     private var appContext: Context? = null
     private var activeKadb: Kadb? = null
@@ -98,12 +98,6 @@ object LocalAdbEngine {
         val finished = AtomicBoolean(false)
         lateinit var listener: NsdManager.DiscoveryListener
 
-        fun finish() {
-            if (!finished.compareAndSet(false, true)) return
-            runCatching { nsd.stopServiceDiscovery(listener) }
-            runCatching { multicastLock?.release() }
-        }
-
         listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String?) {
                 Log.d(TAG, "mDNS discovery started: $serviceType")
@@ -112,7 +106,6 @@ object LocalAdbEngine {
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (finished.get()) return
                 if (serviceInfo.serviceType?.contains(serviceType) != true) return
-
                 Log.d(TAG, "mDNS service found: type=${serviceInfo.serviceType}, name=${serviceInfo.serviceName}")
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
@@ -178,11 +171,10 @@ object LocalAdbEngine {
         }
 
         val cachedPort = pairingPort
-        pairingPort = null
         connectPort = null
 
         fun waitForConnect(attempt: Int = 0) {
-            if (attempt >= 8) {
+            if (attempt >= 10) {
                 onDone(false, "PAIR OK nhưng chưa tìm thấy cổng CONNECT. Giữ Wireless debugging ON rồi thử lại.")
                 return
             }
@@ -202,11 +194,13 @@ object LocalAdbEngine {
                 runCatching {
                     Log.i(TAG, "PAIR start: $LOOPBACK:$port")
                     runBlocking { Kadb.pair(LOOPBACK, port, cleanCode, "Apple Seed IMS") }
+                    pairingPort = null
                     Log.i(TAG, "PAIR handshake OK")
                     waitForConnect()
                 }.onFailure { error ->
                     Log.e(TAG, "PAIR failed on port $port", error)
                     if (allowRediscover) {
+                        pairingPort = null
                         discoverPairingPort(
                             onFound = { fresh -> doPair(fresh, false) },
                             onError = { message -> onDone(false, "PAIR FAILED: ${error.message ?: message}") }
