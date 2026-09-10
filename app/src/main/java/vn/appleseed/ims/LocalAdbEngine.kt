@@ -9,6 +9,7 @@ import com.flyfishxu.kadb.Kadb
 import com.flyfishxu.kadb.cert.KadbCert
 import com.flyfishxu.kadb.cert.KadbCertPolicy
 import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
+import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -99,11 +100,16 @@ object LocalAdbEngine {
         val port = pairingPort ?: return onDone(false, "Chưa tìm thấy pairing port")
         Thread {
             try {
-                Kadb.pair("127.0.0.1", port, code.trim(), ctx.filesDir.absolutePath)
-                discoverConnectPort { foundPort ->
-                    connectPort = foundPort
-                    onDone(true, "PAIR OK — connect port $foundPort")
-                } { error -> onDone(false, error) }
+                runBlocking {
+                    Kadb.pair("127.0.0.1", port, code.trim(), "Apple Seed IMS")
+                }
+                discoverConnectPort(
+                    onFound = { foundPort ->
+                        connectPort = foundPort
+                        onDone(true, "PAIR OK — connect port $foundPort")
+                    },
+                    onError = { error -> onDone(false, error) }
+                )
             } catch (e: Exception) {
                 onDone(false, "PAIR FAILED: ${e.message ?: e.javaClass.simpleName}")
             }
@@ -147,7 +153,10 @@ object LocalAdbEngine {
 
     fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
-        val targetPort = port ?: return discoverConnectPort { connect(it, onDone) } { onDone(false, it) }
+        val targetPort = port ?: return discoverConnectPort(
+            onFound = { foundPort -> connect(foundPort, onDone) },
+            onError = { error -> onDone(false, error) }
+        )
         Thread {
             try {
                 activeKadb?.close()
@@ -172,7 +181,14 @@ object LocalAdbEngine {
     fun reconnectSaved(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("connect_port", 0)
-        if (saved > 0) connect(saved, onDone) else discoverConnectPort { connect(it, onDone) } { onDone(false, it) }
+        if (saved > 0) {
+            connect(saved, onDone)
+        } else {
+            discoverConnectPort(
+                onFound = { foundPort -> connect(foundPort, onDone) },
+                onError = { error -> onDone(false, error) }
+            )
+        }
     }
 
     fun shell(command: String): String {
