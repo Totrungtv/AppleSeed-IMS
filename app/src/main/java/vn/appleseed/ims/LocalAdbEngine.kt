@@ -36,7 +36,6 @@ object LocalAdbEngine {
                 additionalPrivateKeysPem = emptyList()
             )
             KadbCert.ensureReady()
-            // Try to reconnect automatically when the app opens.
             reconnectSaved()
         }.onFailure { Log.e(TAG, "Kadb certificate initialization failed", it) }
     }
@@ -85,16 +84,32 @@ object LocalAdbEngine {
     }
 
     fun pair(code: String, onDone: (Boolean, String) -> Unit) {
-        val port = pairingPort ?: return onDone(false, "Chưa tìm thấy pairing port")
-        Thread {
-            runCatching {
-                runBlocking { Kadb.pair("127.0.0.1", port, code.trim(), "Apple Seed IMS") }
-                discoverConnectPort(
-                    onFound = { found -> onDone(true, "PAIR OK — connect port $found") },
-                    onError = { error -> onDone(false, error) }
-                )
-            }.onFailure { onDone(false, "PAIR FAILED: ${it.message ?: it.javaClass.simpleName}") }
-        }.start()
+        val cleanCode = code.trim()
+        if (cleanCode.length != 6 || cleanCode.any { !it.isDigit() }) {
+            return onDone(false, "Mã Pair phải đủ 6 chữ số")
+        }
+
+        fun doPair(port: Int) {
+            Thread {
+                runCatching {
+                    runBlocking { Kadb.pair("127.0.0.1", port, cleanCode, "Apple Seed IMS") }
+                    discoverConnectPort(
+                        onFound = { found -> onDone(true, "PAIR OK — connect port $found") },
+                        onError = { error -> onDone(false, error) }
+                    )
+                }.onFailure { onDone(false, "PAIR FAILED: ${it.message ?: it.javaClass.simpleName}") }
+            }.start()
+        }
+
+        val port = pairingPort
+        if (port != null) {
+            doPair(port)
+        } else {
+            discoverPairingPort(
+                onFound = { found -> doPair(found) },
+                onError = { error -> onDone(false, error) }
+            )
+        }
     }
 
     fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
@@ -125,16 +140,12 @@ object LocalAdbEngine {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("connect_port", 0)
         if (saved > 0) {
-            // First try the last known port. If it changed, automatically rediscover it.
             connect(saved) { ok, status ->
-                if (ok) {
-                    onDone(true, status)
-                } else {
-                    discoverConnectPort(
-                        onFound = { found -> connect(found, onDone) },
-                        onError = { error -> onDone(false, error) }
-                    )
-                }
+                if (ok) onDone(true, status)
+                else discoverConnectPort(
+                    onFound = { found -> connect(found, onDone) },
+                    onError = { error -> onDone(false, error) }
+                )
             }
         } else {
             discoverConnectPort(
