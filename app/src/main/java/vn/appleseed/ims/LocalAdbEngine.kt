@@ -12,7 +12,7 @@ import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.AtomicBoolean
 
 object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
@@ -55,36 +55,63 @@ object LocalAdbEngine {
         })
     }
 
-    fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) =
+    fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
         discover(PAIRING_SERVICE, onFound, onError) { info -> pairingPort = info.port }
+    }
 
-    fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) =
+    fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
         discover(CONNECT_SERVICE, onFound, onError) { info -> connectPort = info.port }
+    }
 
-    private fun discover(serviceType: String, onFound: (Int) -> Unit, onError: (String) -> Unit, save: (NsdServiceInfo) -> Unit) {
+    private fun discover(
+        serviceType: String,
+        onFound: (Int) -> Unit,
+        onError: (String) -> Unit,
+        save: (NsdServiceInfo) -> Unit
+    ) {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
+        val finished = AtomicBoolean(false)
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String?) = Unit
+
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                if (finished.get()) return
                 if (serviceInfo.serviceType?.contains(serviceType) != true) return
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) = onError("Không resolve được ADB service ($errorCode)")
+                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
+                            if (finished.compareAndSet(false, true)) {
+                                runCatching { nsd.stopServiceDiscovery(this@object) }
+                                onError("Không resolve được ADB service ($errorCode)")
+                            }
+                        }
+
                         override fun onServiceResolved(info: NsdServiceInfo) {
+                            if (!finished.compareAndSet(false, true)) return
                             save(info)
+                            runCatching { nsd.stopServiceDiscovery(this@object) }
                             onFound(info.port)
                         }
                     })
-                }.onFailure { onError("Resolve service lỗi: ${it.message}") }
+                }.onFailure {
+                    if (finished.compareAndSet(false, true)) {
+                        runCatching { nsd.stopServiceDiscovery(this) }
+                        onError("Resolve service lỗi: ${it.message}")
+                    }
+                }
             }
+
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
             override fun onDiscoveryStopped(serviceType: String?) = Unit
-            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) = onError("Wireless Debugging service không khả dụng ($errorCode)")
+            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
+                if (finished.compareAndSet(false, true)) onError("Wireless Debugging service không khả dụng ($errorCode)")
+            }
             override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
         }
-        runCatching { nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener) }
-            .onFailure { onError("Không bắt đầu được mDNS: ${it.message}") }
+        runCatching {
+            nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
+        }.onFailure { onError("Không bắt đầu được mDNS: ${it.message}") }
     }
 
     fun pair(code: String, onDone: (Boolean, String) -> Unit) {
@@ -93,28 +120,45 @@ object LocalAdbEngine {
             return onDone(false, "Mã Pair phải đủ 6 chữ số")
         }
 
+        // The pairing port is temporary and can change every time Android opens
+        // the pairing dialog. Never reuse an old cached port.
+        pairingPort = null
+        connectPort = null
+
+        fun waitForConnect(attempt: Int = 0) {
+            if (attempt >= 10) {
+                onDone(false, "PAIR OK nhưng chưa thấy cổng CONNECT. Mở lại Wireless debugging và thử PAIR bằng mã mới.")
+                return
+            }
+            discoverConnectPort(
+                onFound = { found -> onDone(true, "PAIR OK — connect port $found") },
+                onError = {
+                    Thread {
+                        Thread.sleep(1000)
+                        waitForConnect(attempt + 1)
+                    }.start()
+                }
+            )
+        }
+
         fun doPair(port: Int) {
             Thread {
                 runCatching {
-                    Log.i(TAG, "Pairing local Wireless ADB: $LOOPBACK:$port")
+                    Log.i(TAG, "PAIR start: $LOOPBACK:$port")
                     runBlocking { Kadb.pair(LOOPBACK, port, cleanCode, "Apple Seed IMS") }
-                    discoverConnectPort(
-                        onFound = { found -> onDone(true, "PAIR OK — connect port $found") },
-                        onError = { error -> onDone(false, error) }
-                    )
-                }.onFailure { onDone(false, "PAIR FAILED: ${it.message ?: it.javaClass.simpleName}") }
+                    Log.i(TAG, "PAIR handshake OK")
+                    waitForConnect()
+                }.onFailure {
+                    Log.e(TAG, "PAIR failed", it)
+                    onDone(false, "PAIR FAILED: ${it.message ?: it.javaClass.simpleName}")
+                }
             }.start()
         }
 
-        val port = pairingPort
-        if (port != null) {
-            doPair(port)
-        } else {
-            discoverPairingPort(
-                onFound = { found -> doPair(found) },
-                onError = { error -> onDone(false, error) }
-            )
-        }
+        discoverPairingPort(
+            onFound = { found -> doPair(found) },
+            onError = { error -> onDone(false, error) }
+        )
     }
 
     fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
@@ -125,7 +169,7 @@ object LocalAdbEngine {
         )
         Thread {
             runCatching {
-                Log.i(TAG, "Connecting local Wireless ADB: $LOOPBACK:$target")
+                Log.i(TAG, "CONNECT start: $LOOPBACK:$target")
                 activeKadb?.close()
                 activeKadb = Kadb.create(LOOPBACK, target, 15000, 15000)
                 val probe = activeKadb?.shell("echo APPLE_SEED_ADB_OK")
@@ -136,6 +180,7 @@ object LocalAdbEngine {
                     .apply()
                 onDone(true, "WIRELESS ADB ONLINE")
             }.onFailure {
+                Log.e(TAG, "CONNECT failed", it)
                 activeKadb?.close()
                 activeKadb = null
                 connectPort = null
@@ -150,10 +195,13 @@ object LocalAdbEngine {
         if (saved > 0) {
             connect(saved) { ok, status ->
                 if (ok) onDone(true, status)
-                else discoverConnectPort(
-                    onFound = { found -> connect(found, onDone) },
-                    onError = { error -> onDone(false, error) }
-                )
+                else {
+                    connectPort = null
+                    discoverConnectPort(
+                        onFound = { found -> connect(found, onDone) },
+                        onError = { error -> onDone(false, error) }
+                    )
+                }
             }
         } else {
             discoverConnectPort(
