@@ -21,7 +21,7 @@ object LocalAdbEngine {
     private const val CONNECT_SERVICE = "_adb-tls-connect._tcp"
     private const val LOOPBACK = "127.0.0.1"
     private const val PREFS = "apple_seed_adb"
-    private const val DISCOVERY_TIMEOUT_MS = 30000L
+    private const val DISCOVERY_TIMEOUT_MS = 10000L
     private const val AUTO_CONNECT_RETRY_MS = 3000L
 
     private var appContext: Context? = null
@@ -94,6 +94,7 @@ object LocalAdbEngine {
         discoverPairingPort(
             onFound = { found ->
                 pairingPort = found
+                pairingDiscoveryActive.set(false)
                 pairingDiscoveryInFlight.set(false)
                 Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found")
             },
@@ -105,12 +106,19 @@ object LocalAdbEngine {
     }
 
     fun stopPairingDiscovery() {
+        // Do not fake-clear an in-flight NSD listener. The listener owns the actual
+        // discovery lifecycle and will clear pairingDiscoveryInFlight when it finishes.
         pairingDiscoveryActive.set(false)
-        pairingDiscoveryInFlight.set(false)
     }
 
     fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
-        discover(PAIRING_SERVICE, onFound, onError) { info ->
+        if (!pairingDiscoveryInFlight.compareAndSet(false, true)) {
+            return onError("PAIR discovery đang chạy")
+        }
+        discover(PAIRING_SERVICE, onFound, { error ->
+            pairingDiscoveryInFlight.set(false)
+            onError(error)
+        }) { info ->
             pairingPort = info.port
             Log.i(TAG, "Resolved pairing service: name=${info.serviceName}, host=${info.host}, port=${info.port}")
         }
@@ -154,14 +162,15 @@ object LocalAdbEngine {
         }
 
         listener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(serviceType: String?) {
-                Log.d(TAG, "mDNS discovery started: $serviceType")
+            override fun onDiscoveryStarted(type: String?) {
+                Log.d(TAG, "mDNS discovery started: $type")
             }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (finished.get()) return
-                if (serviceInfo.serviceType?.contains(serviceType) != true) return
-                Log.d(TAG, "mDNS service found: type=${serviceInfo.serviceType}, name=${serviceInfo.serviceName}")
+                val advertisedType = serviceInfo.serviceType ?: return
+                if (!advertisedType.contains(serviceType)) return
+                Log.d(TAG, "mDNS service found: type=$advertisedType, name=${serviceInfo.serviceName}")
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
@@ -181,14 +190,16 @@ object LocalAdbEngine {
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
-            override fun onDiscoveryStopped(serviceType: String?) { Log.d(TAG, "mDNS discovery stopped: $serviceType") }
+            override fun onDiscoveryStopped(type: String?) {
+                Log.d(TAG, "mDNS discovery stopped: $type")
+            }
 
-            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
+            override fun onStartDiscoveryFailed(type: String?, errorCode: Int) {
                 finish()
                 onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
             }
 
-            override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
+            override fun onStopDiscoveryFailed(type: String?, errorCode: Int) = Unit
         }
 
         runCatching {
@@ -214,24 +225,42 @@ object LocalAdbEngine {
             return onDone(false, "Mã Pair phải đủ 6 chữ số")
         }
 
-        stopPairingDiscovery()
-        val cachedPort = pairingPort
+        pairingDiscoveryActive.set(false)
         connectPort = null
+        val cachedPort = pairingPort
 
-        fun waitForConnect(attempt: Int = 0) {
-            if (attempt >= 10) {
-                onDone(false, "PAIR OK nhưng chưa tìm thấy cổng CONNECT. Giữ Wireless debugging ON rồi thử lại.")
+        fun waitForPairingPort(attempt: Int = 0) {
+            if (pairingPort != null) {
+                doPair(pairingPort!!, true)
                 return
             }
-            discoverConnectPort(
-                onFound = { found -> connect(found, onDone) },
-                onError = {
-                    Thread {
-                        Thread.sleep(700)
-                        waitForConnect(attempt + 1)
-                    }.start()
-                }
-            )
+            if (attempt >= 12) {
+                onDone(false, "Không tìm thấy cổng PAIRING. Hãy mở Pair device with pairing code rồi thử lại.")
+                return
+            }
+            Thread {
+                Thread.sleep(500)
+                waitForPairingPort(attempt + 1)
+            }.start()
+        }
+
+        fun waitForConnect(attempt: Int = 0) {
+            if (attempt >= 12) {
+                onDone(false, "PAIR OK nhưng chưa tìm thấy cổng CONNECT. Hãy giữ Wireless debugging ON rồi thử lại.")
+                return
+            }
+            Thread {
+                Thread.sleep(700)
+                discoverConnectPort(
+                    onFound = { found -> connect(found, onDone) },
+                    onError = {
+                        Thread {
+                            Thread.sleep(500)
+                            waitForConnect(attempt + 1)
+                        }.start()
+                    }
+                )
+            }.start()
         }
 
         fun doPair(port: Int, allowRediscover: Boolean) {
@@ -246,10 +275,19 @@ object LocalAdbEngine {
                     Log.e(TAG, "PAIR failed on port $port", error)
                     if (allowRediscover) {
                         pairingPort = null
-                        discoverPairingPort(
-                            onFound = { fresh -> doPair(fresh, false) },
-                            onError = { message -> onDone(false, "PAIR FAILED: ${error.message ?: message}") }
-                        )
+                        pairingDiscoveryActive.set(true)
+                        if (pairingDiscoveryInFlight.compareAndSet(false, true)) {
+                            discover(PAIRING_SERVICE,
+                                onFound = { fresh -> doPair(fresh, false) },
+                                onError = { message -> onDone(false, "PAIR FAILED: ${error.message ?: message}") },
+                                save = { info ->
+                                    pairingPort = info.port
+                                    Log.i(TAG, "Rediscovered pairing service: ${info.port}")
+                                }
+                            )
+                        } else {
+                            onDone(false, "PAIR FAILED: ${error.message ?: error.javaClass.simpleName}")
+                        }
                     } else {
                         onDone(false, "PAIR FAILED: ${error.message ?: error.javaClass.simpleName}")
                     }
@@ -259,11 +297,22 @@ object LocalAdbEngine {
 
         if (cachedPort != null) {
             doPair(cachedPort, true)
+        } else if (pairingDiscoveryInFlight.get()) {
+            waitForPairingPort()
         } else {
-            discoverPairingPort(
-                onFound = { found -> doPair(found, true) },
-                onError = { error -> onDone(false, error) }
-            )
+            pairingDiscoveryActive.set(true)
+            if (!pairingDiscoveryInFlight.compareAndSet(false, true)) {
+                waitForPairingPort()
+            } else {
+                discover(PAIRING_SERVICE,
+                    onFound = { found -> doPair(found, true) },
+                    onError = { error -> onDone(false, error) },
+                    save = { info ->
+                        pairingPort = info.port
+                        Log.i(TAG, "Resolved pairing service: name=${info.serviceName}, host=${info.host}, port=${info.port}")
+                    }
+                )
+            }
         }
     }
 
