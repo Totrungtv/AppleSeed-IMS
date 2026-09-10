@@ -116,7 +116,10 @@ class MainActivity : ComponentActivity() {
 
         if (pairDialog) {
             AlertDialog(
-                onDismissRequest = { pairDialog = false },
+                onDismissRequest = {
+                    LocalAdbEngine.stopPairingDiscovery()
+                    pairDialog = false
+                },
                 title = { Text("PAIR WIRELESS DEBUGGING") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -146,7 +149,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }) { Text("PAIR") }
                 },
-                dismissButton = { OutlinedButton(onClick = { pairDialog = false }) { Text("CANCEL") } }
+                dismissButton = {
+                    OutlinedButton(onClick = {
+                        LocalAdbEngine.stopPairingDiscovery()
+                        pairDialog = false
+                    }) { Text("CANCEL") }
+                }
             )
         }
 
@@ -177,6 +185,7 @@ class MainActivity : ComponentActivity() {
                                 adb = "READY FOR 6-DIGIT PAIRING CODE"
                                 pairCode = ""
                                 pairDialog = true
+                                LocalAdbEngine.preparePairing()
                             },
                             reconnect = {
                                 adb = "CONNECTING..."
@@ -325,23 +334,24 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable private fun Section(title: String, subtitle: String) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(title, color = MainText, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(title, color = MainText, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
             Text(subtitle, color = Muted, fontSize = 10.sp)
         }
     }
 
     @Composable private fun Data(label: String, value: String) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, color = Muted, fontSize = 11.sp)
-            Text(value, color = MainText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(label, color = Muted, fontSize = 10.sp)
+            Text(value, color = MainText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 
     @Composable private fun Evidence(text: String) {
-        if (text.isBlank()) return
-        Card(Modifier.fillMaxWidth().padding(12.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
-            Text(text, color = MainText, modifier = Modifier.padding(12.dp), fontSize = 10.sp)
+        if (text.isNotBlank()) {
+            Card(Modifier.fillMaxWidth().padding(12.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Text(text, color = MainText, fontSize = 10.sp, modifier = Modifier.padding(12.dp))
+            }
         }
     }
 }
