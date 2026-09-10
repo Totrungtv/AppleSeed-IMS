@@ -8,6 +8,7 @@ import android.telephony.CarrierConfigManager
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import android.util.Base64
 import android.util.Log
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.lang.reflect.Method
@@ -17,22 +18,14 @@ class BrokerInstrumentation : Instrumentation() {
     companion object {
         private const val TAG = "AppleSeedBroker"
         private val IMPORTANT_KEYS = listOf(
-            "carrier_volte_available_bool",
-            "enhanced_4g_lte_on_by_default_bool",
-            "editable_enhanced_4g_lte_bool",
-            "hide_enhanced_4g_lte_bool",
-            "carrier_volte_provisioned_bool",
-            "carrier_volte_provisioning_required_bool",
-            "carrier_wfc_ims_available_bool",
-            "carrier_default_wfc_ims_enabled_bool",
-            "carrier_wfc_ims_provisioned_bool",
-            "editable_wfc_mode_bool",
-            "editable_wfc_roaming_mode_bool",
-            "carrier_default_wfc_ims_roaming_enabled_bool",
-            "vonr_enabled_bool",
-            "vonr_setting_visibility_bool",
-            "carrier_supports_ss_over_ut_bool",
-            "carrier_vt_available_bool",
+            "carrier_volte_available_bool", "enhanced_4g_lte_on_by_default_bool",
+            "editable_enhanced_4g_lte_bool", "hide_enhanced_4g_lte_bool",
+            "carrier_volte_provisioned_bool", "carrier_volte_provisioning_required_bool",
+            "carrier_wfc_ims_available_bool", "carrier_default_wfc_ims_enabled_bool",
+            "carrier_wfc_ims_provisioned_bool", "editable_wfc_mode_bool",
+            "editable_wfc_roaming_mode_bool", "carrier_default_wfc_ims_roaming_enabled_bool",
+            "vonr_enabled_bool", "vonr_setting_visibility_bool",
+            "carrier_supports_ss_over_ut_bool", "carrier_vt_available_bool",
             "show_ims_registration_status_bool"
         )
     }
@@ -46,17 +39,14 @@ class BrokerInstrumentation : Instrumentation() {
                 HiddenApiBypass.addHiddenApiExemptions("L")
                 val automation = getUiAutomation()
                 automation.adoptShellPermissionIdentity()
-                try {
-                    execute(arguments ?: Bundle())
-                } finally {
-                    runCatching { automation.dropShellPermissionIdentity() }
-                }
+                try { execute(arguments ?: Bundle()) } finally { runCatching { automation.dropShellPermissionIdentity() } }
             }.getOrElse { error ->
                 code = 1
                 Log.e(TAG, "Broker failed", error)
                 "ERROR: ${error.message ?: error.javaClass.simpleName}"
             }
-            sendStatus(1, Bundle().apply { putString("evidence", result) })
+            val encoded = Base64.encodeToString(result.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            sendStatus(1, Bundle().apply { putString("evidence_b64", encoded) })
             finish(code, Bundle().apply { putString("result", result) })
         }.start()
     }
@@ -68,7 +58,6 @@ class BrokerInstrumentation : Instrumentation() {
         if (subscriptions.isEmpty()) return "NO ACTIVE SIM SUBSCRIPTION"
         val selected = subscriptions.filter { requestedSubId < 0 || it.subscriptionId == requestedSubId }
         if (selected.isEmpty()) return "SUBSCRIPTION $requestedSubId NOT FOUND"
-
         return buildString {
             appendLine("APPLE SEED CARRIER ENGINE")
             appendLine("MODE=$mode")
@@ -107,9 +96,7 @@ class BrokerInstrumentation : Instrumentation() {
         val keys = if (selectedOnly) IMPORTANT_KEYS else config.keySet().toList().sorted()
         return buildString {
             appendLine("KEY_COUNT=${config.keySet().size}")
-            keys.forEach { key ->
-                if (config.containsKey(key)) appendLine("$key=${formatValue(config.get(key))}")
-            }
+            keys.forEach { key -> if (config.containsKey(key)) appendLine("$key=${formatValue(config.get(key))}") }
         }.trim()
     }
 
@@ -135,7 +122,7 @@ class BrokerInstrumentation : Instrumentation() {
         if (slot >= 0) resetIms(slot)
         return buildString {
             appendLine("OVERRIDE=APPLIED")
-            changed.forEach { appendLine(it) }
+            changed.forEach(::appendLine)
             appendLine("IMS=RESET REQUESTED")
             appendLine("VERIFY=RUN READ AGAIN")
         }.trim()
@@ -157,8 +144,7 @@ class BrokerInstrumentation : Instrumentation() {
         }
     }
 
-    private fun parseList(raw: String): List<String> =
-        raw.removePrefix("[").removeSuffix("]").split(',').map(String::trim).filter(String::isNotEmpty)
+    private fun parseList(raw: String): List<String> = raw.removePrefix("[").removeSuffix("]").split(',').map(String::trim).filter(String::isNotEmpty)
 
     private fun formatValue(value: Any?): String = when (value) {
         is BooleanArray -> value.joinToString(prefix = "[", postfix = "]")
@@ -170,8 +156,7 @@ class BrokerInstrumentation : Instrumentation() {
     }
 
     private fun overrideConfig(subId: Int, bundle: PersistableBundle?) {
-        val manager = targetContext.getSystemService(CarrierConfigManager::class.java)
-            ?: error("CarrierConfigManager unavailable")
+        val manager = targetContext.getSystemService(CarrierConfigManager::class.java) ?: error("CarrierConfigManager unavailable")
         val method = findMethod(manager, "overrideConfig") ?: error("overrideConfig unavailable")
         when (method.parameterTypes.size) {
             2 -> method.invoke(manager, subId, bundle)
@@ -194,9 +179,7 @@ class BrokerInstrumentation : Instrumentation() {
     private fun findMethod(target: Any, name: String): Method? {
         var type: Class<*>? = target.javaClass
         while (type != null) {
-            val found = runCatching {
-                type.declaredMethods.firstOrNull { it.name == name }?.also { it.isAccessible = true }
-            }.getOrNull()
+            val found = runCatching { type.declaredMethods.firstOrNull { it.name == name }?.also { it.isAccessible = true } }.getOrNull()
             if (found != null) return found
             type = type.superclass
         }
