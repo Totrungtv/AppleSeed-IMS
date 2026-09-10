@@ -100,7 +100,7 @@ class BrokerInstrumentation : Instrumentation() {
         val method = findMethod(manager, "overrideConfig") ?: throw IllegalStateException("CarrierConfigManager.overrideConfig not available")
         when (method.parameterTypes.size) {
             2 -> method.invoke(manager, subId, bundle)
-            3 -> method.invoke(manager, subId, bundle, true)
+            3 -> method.invoke(manager, subId, bundle, false)
             else -> throw IllegalStateException("Unexpected overrideConfig signature")
         }
     }
