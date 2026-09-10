@@ -13,7 +13,7 @@ import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
 import java.io.File
-import java.util.concurrent.AtomicBoolean
+import java.util.concurrent.atomic.AtomicBoolean
 
 object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
@@ -117,7 +117,6 @@ object LocalAdbEngine {
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
-                            // A stale service can fail to resolve. Keep scanning.
                             Log.w(TAG, "mDNS resolve failed: type=$serviceType code=$errorCode")
                         }
 
