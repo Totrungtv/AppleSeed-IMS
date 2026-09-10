@@ -36,6 +36,8 @@ object LocalAdbEngine {
                 additionalPrivateKeysPem = emptyList()
             )
             KadbCert.ensureReady()
+            // Try to reconnect automatically when the app opens.
+            reconnectSaved()
         }.onFailure { Log.e(TAG, "Kadb certificate initialization failed", it) }
     }
 
@@ -113,6 +115,7 @@ object LocalAdbEngine {
             }.onFailure {
                 activeKadb?.close()
                 activeKadb = null
+                connectPort = null
                 onDone(false, "ADB CONNECT FAILED: ${it.message ?: it.javaClass.simpleName}")
             }
         }.start()
@@ -121,10 +124,24 @@ object LocalAdbEngine {
     fun reconnectSaved(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("connect_port", 0)
-        if (saved > 0) connect(saved, onDone) else discoverConnectPort(
-            onFound = { found -> connect(found, onDone) },
-            onError = { error -> onDone(false, error) }
-        )
+        if (saved > 0) {
+            // First try the last known port. If it changed, automatically rediscover it.
+            connect(saved) { ok, status ->
+                if (ok) {
+                    onDone(true, status)
+                } else {
+                    discoverConnectPort(
+                        onFound = { found -> connect(found, onDone) },
+                        onError = { error -> onDone(false, error) }
+                    )
+                }
+            }
+        } else {
+            discoverConnectPort(
+                onFound = { found -> connect(found, onDone) },
+                onError = { error -> onDone(false, error) }
+            )
+        }
     }
 
     fun shell(command: String): String {
