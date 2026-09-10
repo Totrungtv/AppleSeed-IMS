@@ -27,7 +27,7 @@ object LocalAdbEngine {
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
     private var pairingPort: Int? = null
-    private var pairingDiscoveryActive = AtomicBoolean(false)
+    private val pairingDiscoveryActive = AtomicBoolean(false)
     private val configured = AtomicBoolean(false)
 
     fun init(context: Context) {
@@ -60,16 +60,13 @@ object LocalAdbEngine {
     }
 
     fun preparePairing() {
-        if (pairingDiscoveryActive.getAndSet(true)) return
+        if (!pairingDiscoveryActive.compareAndSet(false, true)) return
         pairingPort = null
         Thread {
             while (pairingDiscoveryActive.get()) {
                 if (pairingPort == null) {
                     discoverPairingPort(
-                        onFound = { found ->
-                            pairingPort = found
-                            Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found")
-                        },
+                        onFound = { found -> Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found") },
                         onError = { error -> Log.d(TAG, "PAIR discovery retry: $error") }
                     )
                 }
