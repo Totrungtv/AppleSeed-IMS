@@ -18,13 +18,12 @@ object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
     private const val PAIRING_SERVICE = "_adb-tls-pairing._tcp"
     private const val CONNECT_SERVICE = "_adb-tls-connect._tcp"
+    private const val LOOPBACK = "127.0.0.1"
     private const val PREFS = "apple_seed_adb"
     private var appContext: Context? = null
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
     private var pairingPort: Int? = null
-    private var connectHost: String? = null
-    private var pairingHost: String? = null
     private val configured = AtomicBoolean(false)
 
     fun init(context: Context) {
@@ -57,16 +56,10 @@ object LocalAdbEngine {
     }
 
     fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) =
-        discover(PAIRING_SERVICE, onFound, onError) { info ->
-            pairingPort = info.port
-            pairingHost = info.host?.hostAddress
-        }
+        discover(PAIRING_SERVICE, onFound, onError) { info -> pairingPort = info.port }
 
     fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) =
-        discover(CONNECT_SERVICE, onFound, onError) { info ->
-            connectPort = info.port
-            connectHost = info.host?.hostAddress
-        }
+        discover(CONNECT_SERVICE, onFound, onError) { info -> connectPort = info.port }
 
     private fun discover(serviceType: String, onFound: (Int) -> Unit, onError: (String) -> Unit, save: (NsdServiceInfo) -> Unit) {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
@@ -100,10 +93,11 @@ object LocalAdbEngine {
             return onDone(false, "Mã Pair phải đủ 6 chữ số")
         }
 
-        fun doPair(host: String, port: Int) {
+        fun doPair(port: Int) {
             Thread {
                 runCatching {
-                    runBlocking { Kadb.pair(host, port, cleanCode, "Apple Seed IMS") }
+                    Log.i(TAG, "Pairing local Wireless ADB: $LOOPBACK:$port")
+                    runBlocking { Kadb.pair(LOOPBACK, port, cleanCode, "Apple Seed IMS") }
                     discoverConnectPort(
                         onFound = { found -> onDone(true, "PAIR OK — connect port $found") },
                         onError = { error -> onDone(false, error) }
@@ -112,17 +106,12 @@ object LocalAdbEngine {
             }.start()
         }
 
-        val host = pairingHost
         val port = pairingPort
-        if (!host.isNullOrBlank() && port != null) {
-            doPair(host, port)
+        if (port != null) {
+            doPair(port)
         } else {
             discoverPairingPort(
-                onFound = { found ->
-                    val resolvedHost = pairingHost
-                    if (resolvedHost.isNullOrBlank()) onDone(false, "Không lấy được địa chỉ Wireless ADB")
-                    else doPair(resolvedHost, found)
-                },
+                onFound = { found -> doPair(found) },
                 onError = { error -> onDone(false, error) }
             )
         }
@@ -134,24 +123,22 @@ object LocalAdbEngine {
             onFound = { found -> connect(found, onDone) },
             onError = { error -> onDone(false, error) }
         )
-        val host = connectHost ?: return onDone(false, "Không có địa chỉ Wireless ADB")
         Thread {
             runCatching {
+                Log.i(TAG, "Connecting local Wireless ADB: $LOOPBACK:$target")
                 activeKadb?.close()
-                activeKadb = Kadb.create(host, target, 15000, 15000)
+                activeKadb = Kadb.create(LOOPBACK, target, 15000, 15000)
                 val probe = activeKadb?.shell("echo APPLE_SEED_ADB_OK")
                 check(probe?.exitCode == 0 && probe.output.contains("APPLE_SEED_ADB_OK")) { "ADB shell probe thất bại" }
                 connectPort = target
                 ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                     .putInt("connect_port", target)
-                    .putString("connect_host", host)
                     .apply()
                 onDone(true, "WIRELESS ADB ONLINE")
             }.onFailure {
                 activeKadb?.close()
                 activeKadb = null
                 connectPort = null
-                connectHost = null
                 onDone(false, "ADB CONNECT FAILED: ${it.message ?: it.javaClass.simpleName}")
             }
         }.start()
@@ -159,12 +146,9 @@ object LocalAdbEngine {
 
     fun reconnectSaved(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
-        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val savedPort = prefs.getInt("connect_port", 0)
-        val savedHost = prefs.getString("connect_host", null)
-        if (savedPort > 0 && !savedHost.isNullOrBlank()) {
-            connectHost = savedHost
-            connect(savedPort) { ok, status ->
+        val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("connect_port", 0)
+        if (saved > 0) {
+            connect(saved) { ok, status ->
                 if (ok) onDone(true, status)
                 else discoverConnectPort(
                     onFound = { found -> connect(found, onDone) },
