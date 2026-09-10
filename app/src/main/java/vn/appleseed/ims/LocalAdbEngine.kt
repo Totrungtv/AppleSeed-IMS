@@ -22,12 +22,15 @@ object LocalAdbEngine {
     private const val LOOPBACK = "127.0.0.1"
     private const val PREFS = "apple_seed_adb"
     private const val DISCOVERY_TIMEOUT_MS = 30000L
+    private const val AUTO_CONNECT_RETRY_MS = 5000L
 
     private var appContext: Context? = null
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
     private var pairingPort: Int? = null
     private val pairingDiscoveryActive = AtomicBoolean(false)
+    private val connectDiscoveryActive = AtomicBoolean(false)
+    private val autoConnectActive = AtomicBoolean(false)
     private val configured = AtomicBoolean(false)
 
     fun init(context: Context) {
@@ -41,7 +44,7 @@ object LocalAdbEngine {
                 additionalPrivateKeysPem = emptyList()
             )
             KadbCert.ensureReady()
-            reconnectSaved()
+            startAutoConnect()
         }.onFailure { Log.e(TAG, "Kadb certificate initialization failed", it) }
     }
 
@@ -59,12 +62,27 @@ object LocalAdbEngine {
         })
     }
 
+    private fun startAutoConnect() {
+        if (!autoConnectActive.compareAndSet(false, true)) return
+        Thread {
+            while (autoConnectActive.get()) {
+                if (activeKadb == null && !connectDiscoveryActive.get()) {
+                    discoverConnectPort(
+                        onFound = { found -> connect(found) },
+                        onError = { Log.d(TAG, "AUTO CONNECT retry: $it") }
+                    )
+                }
+                Thread.sleep(AUTO_CONNECT_RETRY_MS)
+            }
+        }.start()
+    }
+
     fun preparePairing() {
         if (!pairingDiscoveryActive.compareAndSet(false, true)) return
         pairingPort = null
         Thread {
             while (pairingDiscoveryActive.get()) {
-                if (pairingPort == null) {
+                if (pairingPort == null && pairingDiscoveryActive.compareAndSet(true, true)) {
                     discoverPairingPort(
                         onFound = { found -> Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found") },
                         onError = { error -> Log.d(TAG, "PAIR discovery retry: $error") }
@@ -87,7 +105,11 @@ object LocalAdbEngine {
     }
 
     fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
-        discover(CONNECT_SERVICE, onFound, onError) { info ->
+        if (!connectDiscoveryActive.compareAndSet(false, true)) return
+        discover(CONNECT_SERVICE, onFound, { error ->
+            connectDiscoveryActive.set(false)
+            onError(error)
+        }) { info ->
             connectPort = info.port
             Log.i(TAG, "Resolved connect service: name=${info.serviceName}, host=${info.host}, port=${info.port}")
         }
@@ -111,6 +133,13 @@ object LocalAdbEngine {
         val finished = AtomicBoolean(false)
         lateinit var listener: NsdManager.DiscoveryListener
 
+        fun finish() {
+            if (!finished.compareAndSet(false, true)) return
+            if (serviceType == CONNECT_SERVICE) connectDiscoveryActive.set(false)
+            runCatching { nsd.stopServiceDiscovery(listener) }
+            runCatching { multicastLock?.release() }
+        }
+
         listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String?) {
                 Log.d(TAG, "mDNS discovery started: $serviceType")
@@ -129,11 +158,8 @@ object LocalAdbEngine {
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             if (finished.get()) return
                             save(info)
-                            if (finished.compareAndSet(false, true)) {
-                                runCatching { nsd.stopServiceDiscovery(listener) }
-                                runCatching { multicastLock?.release() }
-                                onFound(info.port)
-                            }
+                            finish()
+                            onFound(info.port)
                         }
                     })
                 }.onFailure {
@@ -145,10 +171,8 @@ object LocalAdbEngine {
             override fun onDiscoveryStopped(serviceType: String?) { Log.d(TAG, "mDNS discovery stopped: $serviceType") }
 
             override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
-                if (finished.compareAndSet(false, true)) {
-                    runCatching { multicastLock?.release() }
-                    onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
-                }
+                finish()
+                onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
             }
 
             override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
@@ -157,18 +181,15 @@ object LocalAdbEngine {
         runCatching {
             nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
         }.onFailure {
-            if (finished.compareAndSet(false, true)) {
-                runCatching { multicastLock?.release() }
-                onError("Không bắt đầu được mDNS: ${it.message}")
-            }
+            finish()
+            onError("Không bắt đầu được mDNS: ${it.message}")
             return
         }
 
         Thread {
             Thread.sleep(DISCOVERY_TIMEOUT_MS)
-            if (finished.compareAndSet(false, true)) {
-                runCatching { nsd.stopServiceDiscovery(listener) }
-                runCatching { multicastLock?.release() }
+            if (!finished.get()) {
+                finish()
                 onError("Không tìm thấy $serviceType trong ${DISCOVERY_TIMEOUT_MS / 1000}s")
             }
         }.start()
@@ -256,7 +277,6 @@ object LocalAdbEngine {
                 Log.e(TAG, "CONNECT failed", it)
                 activeKadb?.close()
                 activeKadb = null
-                connectPort = null
                 onDone(false, "ADB CONNECT FAILED: ${it.message ?: it.javaClass.simpleName}")
             }
         }.start()
@@ -317,6 +337,7 @@ object LocalAdbEngine {
 
     fun close() {
         stopPairingDiscovery()
+        autoConnectActive.set(false)
         runCatching { activeKadb?.close() }
         activeKadb = null
     }
