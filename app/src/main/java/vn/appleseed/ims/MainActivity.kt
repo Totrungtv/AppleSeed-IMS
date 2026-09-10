@@ -52,7 +52,6 @@ private val Bg = Color(0xFF07090C)
 private val Panel = Color(0xFF11161C)
 private val MainText = Color(0xFFF4F7FA)
 private val Muted = Color(0xFF87939F)
-private val Accent = Color(0xFFFF6B35)
 private val Good = Color(0xFF49E69B)
 private val Warn = Color(0xFFFFC857)
 
@@ -246,6 +245,35 @@ class MainActivity : ComponentActivity() {
                 OutlinedButton(onClick = openSettings, modifier = Modifier.fillMaxWidth()) { Text("MỞ DEVELOPER OPTIONS") }
                 Button(onClick = pair, modifier = Modifier.fillMaxWidth()) { Text("PAIR WIRELESS DEBUGGING") }
                 OutlinedButton(onClick = reconnect, modifier = Modifier.fillMaxWidth()) { Text("RECONNECT ĐÃ PAIR") }
+            }
+        }
+        UsageGuide(adb)
+    }
+
+    @Composable private fun UsageGuide(adb: String) {
+        Section("HƯỚNG DẪN SỬ DỤNG", "Làm theo đúng thứ tự — chỉ Pair lần đầu")
+        Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                GuideRow("1", "BẬT WIRELESS DEBUGGING", "Trên điện thoại: Developer options → Wireless debugging → ON.")
+                GuideRow("2", "PAIR LẦN ĐẦU", "Bấm PAIR WIRELESS DEBUGGING trong app → chọn Pair device with pairing code → nhập mã 6 số.")
+                GuideRow("3", "KẾT NỐI", "Sau khi Pair thành công, app tự tìm cổng ADB và kết nối. Chờ trạng thái WIRELESS ADB ONLINE.")
+                GuideRow("4", "LẦN SAU", "Không cần Pair lại. Bấm RECONNECT ĐÃ PAIR nếu máy chưa tự kết nối.")
+                GuideRow("5", "ĐỌC DỮ LIỆU", "Vào CARRIER → READ ALL CARRIER CONFIG để đọc cấu hình SIM.")
+                GuideRow("6", "PATCH IMS", "Vào PATCH → chọn VoLTE / VoWiFi / VoNR → APPLY + RESET IMS → VERIFY CONFIG.")
+                GuideRow("7", "KHÔI PHỤC", "Muốn bỏ override → RESTORE OVERRIDE. Sau đó VERIFY CONFIG để kiểm tra lại.")
+                Spacer(Modifier.height(2.dp))
+                Text("KẾT NỐI: $adb", color = if (adb.contains("ONLINE")) Good else Warn, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Yêu cầu: điện thoại và máy tính cùng mạng Wi‑Fi. Wireless Debugging phải đang bật.", color = Muted, fontSize = 10.sp)
+            }
+        }
+    }
+
+    @Composable private fun GuideRow(number: String, title: String, detail: String) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(number, color = Good, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+            Column(Modifier.weight(1f)) {
+                Text(title, color = MainText, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text(detail, color = Muted, fontSize = 10.sp, lineHeight = 14.sp)
             }
         }
     }
