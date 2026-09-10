@@ -110,7 +110,7 @@ class MainActivity : ComponentActivity() {
                 title = { Text("PAIR WIRELESS DEBUGGING") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Trên điện thoại: Wireless debugging → Pair device with pairing code.\nNhập mã 6 số vào ô dưới rồi bấm PAIR.", color = Muted)
+                        Text("1. Trên điện thoại: Developer options → Wireless debugging → Pair device with pairing code.\n2. Android sẽ hiện mã 6 số. Nhập mã đó vào ô dưới.", color = Muted)
                         OutlinedTextField(
                             value = pairCode,
                             onValueChange = { pairCode = it.filter(Char::isDigit).take(6) },
@@ -163,9 +163,10 @@ class MainActivity : ComponentActivity() {
                             requestPermission = { permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) },
                             openSettings = { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
                             pair = {
-                                adb = "ENTER 6-DIGIT PAIRING CODE"
+                                adb = "OPENING WIRELESS DEBUGGING..."
                                 pairCode = ""
                                 pairDialog = true
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
                             },
                             reconnect = {
                                 adb = "CONNECTING..."
