@@ -89,25 +89,20 @@ object LocalAdbEngine {
 
     fun preparePairing() {
         pairingDiscoveryActive.set(true)
-        if (!pairingDiscoveryInFlight.compareAndSet(false, true)) return
         pairingPort = null
         discoverPairingPort(
             onFound = { found ->
                 pairingPort = found
                 pairingDiscoveryActive.set(false)
-                pairingDiscoveryInFlight.set(false)
                 Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found")
             },
             onError = { error ->
-                pairingDiscoveryInFlight.set(false)
                 if (pairingDiscoveryActive.get()) Log.d(TAG, "PAIR discovery failed: $error")
             }
         )
     }
 
     fun stopPairingDiscovery() {
-        // Do not fake-clear an in-flight NSD listener. The listener owns the actual
-        // discovery lifecycle and will clear pairingDiscoveryInFlight when it finishes.
         pairingDiscoveryActive.set(false)
     }
 
