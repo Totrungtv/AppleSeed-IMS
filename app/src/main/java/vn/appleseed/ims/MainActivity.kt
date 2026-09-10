@@ -30,7 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
 
@@ -145,8 +146,11 @@ class MainActivity : ComponentActivity() {
                                 if (permission) snap = snapshot()
                                 shizukuStatus = ShizukuShell.status()
                             },
-                            connectShizuku = { shizukuStatus = ShizukuShell.connect() }
+                            connectShizuku = {
+                                shizukuStatus = ShizukuShell.connect()
+                            }
                         )
+
                         1 -> ImsScreen(
                             raw = raw,
                             diagnosis = diagnosis,
@@ -161,6 +165,7 @@ class MainActivity : ComponentActivity() {
                                 shizukuStatus = ShizukuShell.status()
                             }
                         )
+
                         2 -> CarrierScreen(
                             raw = raw,
                             run = {
@@ -168,6 +173,7 @@ class MainActivity : ComponentActivity() {
                                 shizukuStatus = ShizukuShell.status()
                             }
                         )
+
                         3 -> ToolsScreen(
                             status = shizukuStatus,
                             run = {
@@ -194,9 +200,13 @@ class MainActivity : ComponentActivity() {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier.size(44.dp).background(Color(0xFFE9EDF2)),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Color(0xFFE9EDF2)),
                     contentAlignment = Alignment.Center
-                ) { Text("🍎", style = MaterialTheme.typography.titleLarge) }
+                ) {
+                    Text("🍎", style = MaterialTheme.typography.titleLarge)
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text("APPLE SEED", fontWeight = FontWeight.Bold, color = Color.White)
@@ -210,18 +220,26 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun StatusPill(status: String) {
         val good = status.contains("ONLINE")
+        val textColor = if (good) Color(0xFF6EE7B7) else Color(0xFFFFC66D)
         Text(
             text = "●  $status",
-            color = if (good) Color(0xFF6EE7B7) else Color(0xFFFFC66D),
+            color = textColor,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF1A2027)).padding(horizontal = 12.dp, vertical = 8.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF1A2027))
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         )
     }
 
     @Composable
     private fun OverviewScreen(
-        snapshot: DeviceSnapshot?, permission: Boolean, shizukuStatus: String,
-        requestPermission: () -> Unit, scan: () -> Unit, connectShizuku: () -> Unit
+        snapshot: DeviceSnapshot?,
+        permission: Boolean,
+        shizukuStatus: String,
+        requestPermission: () -> Unit,
+        scan: () -> Unit,
+        connectShizuku: () -> Unit
     ) {
         SectionTitle("DEVICE OVERVIEW", "Thông tin nền trước khi phân tích IMS")
         InfoCard("THIẾT BỊ") {
@@ -242,17 +260,30 @@ class MainActivity : ComponentActivity() {
             DataRow("Shizuku", shizukuStatus)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!permission) Button(onClick = requestPermission, modifier = Modifier.weight(1f)) { Text("CẤP QUYỀN") }
-                OutlinedButton(onClick = connectShizuku, modifier = Modifier.weight(1f)) { Text("KẾT NỐI SHIZUKU") }
+                if (!permission) {
+                    Button(onClick = requestPermission, modifier = Modifier.weight(1f)) {
+                        Text("CẤP QUYỀN")
+                    }
+                }
+                OutlinedButton(onClick = connectShizuku, modifier = Modifier.weight(1f)) {
+                    Text("KẾT NỐI SHIZUKU")
+                }
             }
             Spacer(Modifier.height(4.dp))
-            Button(onClick = scan, modifier = Modifier.fillMaxWidth()) { Text("QUÉT THIẾT BỊ") }
+            Button(onClick = scan, modifier = Modifier.fillMaxWidth()) {
+                Text("QUÉT THIẾT BỊ")
+            }
         }
         EvidenceNote()
     }
 
     @Composable
-    private fun ImsScreen(raw: String, diagnosis: String, shizukuStatus: String, runScan: (String) -> Unit) {
+    private fun ImsScreen(
+        raw: String,
+        diagnosis: String,
+        shizukuStatus: String,
+        runScan: (String) -> Unit
+    ) {
         SectionTitle("IMS DIAGNOSTICS", "Tách data network khỏi IMS registration và voice")
         InfoCard("IMS CONTROL") {
             DataRow("Shizuku", shizukuStatus)
@@ -263,6 +294,7 @@ class MainActivity : ComponentActivity() {
                 SmallAction("DEEP SCAN", { runScan("ALL") }, Modifier.weight(1f))
             }
         }
+
         if (raw.isBlank()) {
             InfoCard("IMS STATUS") {
                 DataRow("IMS Registration", "UNKNOWN")
@@ -273,7 +305,7 @@ class MainActivity : ComponentActivity() {
         } else {
             InfoCard("EVIDENCE") {
                 ImsDiagnostics.parseDump(raw).forEach { result -> DataRow(result.name, result.state) }
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text(diagnosis, color = Color(0xFFD9E2EC))
             }
             InfoCard("RAW DUMP") {
@@ -289,7 +321,9 @@ class MainActivity : ComponentActivity() {
         InfoCard("CARRIER PROFILE") {
             Text("Apple Seed chỉ đọc evidence trước. Không override mù.", color = Color(0xFFAAB7C4))
             Spacer(Modifier.height(10.dp))
-            Button(onClick = run, modifier = Modifier.fillMaxWidth()) { Text("ĐỌC CARRIER CONFIG") }
+            Button(onClick = run, modifier = Modifier.fillMaxWidth()) {
+                Text("ĐỌC CARRIER CONFIG")
+            }
         }
         if (raw.isNotBlank()) {
             InfoCard("CONFIG DUMP") {
@@ -304,7 +338,9 @@ class MainActivity : ComponentActivity() {
         InfoCard("SHIZUKU") {
             DataRow("Status", status)
             Spacer(Modifier.height(8.dp))
-            Button(onClick = run, modifier = Modifier.fillMaxWidth()) { Text("THU THẬP FULL IMS DUMP") }
+            Button(onClick = run, modifier = Modifier.fillMaxWidth()) {
+                Text("THU THẬP FULL IMS DUMP")
+            }
         }
         InfoCard("WORKFLOW") {
             DataRow("01", "Device / SIM / Network")
@@ -326,19 +362,29 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun InfoCard(title: String, content: @Composable ColumnScope.() -> Unit) {
         Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 5.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF151A20))
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text(title, color = Color(0xFF8EA2B5), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                content()
-            }
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+                content = {
+                    Text(title, color = Color(0xFF8EA2B5), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    content()
+                }
+            )
         }
     }
 
     @Composable
     private fun DataRow(label: String, value: String) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(label, color = Color(0xFFAAB7C4))
             Text(value, color = Color.White, fontWeight = FontWeight.Medium)
         }
@@ -346,13 +392,24 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun SmallAction(text: String, action: () -> Unit, modifier: Modifier) {
-        OutlinedButton(onClick = action, modifier = modifier) { Text(text, style = MaterialTheme.typography.labelSmall) }
+        OutlinedButton(onClick = action, modifier = modifier) {
+            Text(text, style = MaterialTheme.typography.labelSmall)
+        }
     }
 
     @Composable
     private fun EvidenceNote() {
-        TextButton(onClick = {}, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
-            Text("Evidence-first • 4G data ≠ IMS Registered ≠ VoLTE call", color = Color(0xFF718191), style = MaterialTheme.typography.labelSmall)
+        TextButton(
+            onClick = {},
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 2.dp)
+        ) {
+            Text(
+                "Evidence-first • 4G data ≠ IMS Registered ≠ VoLTE call",
+                color = Color(0xFF718191),
+                style = MaterialTheme.typography.labelSmall
+            )
         }
     }
 }
