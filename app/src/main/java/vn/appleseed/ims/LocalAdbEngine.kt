@@ -3,6 +3,7 @@ package vn.appleseed.ims
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.provider.Settings
 import android.util.Log
 import com.flyfishxu.kadb.Kadb
@@ -57,7 +58,6 @@ object LocalAdbEngine {
         })
     }
 
-    /** Start looking for the temporary pairing endpoint before the user submits the code. */
     fun preparePairing() {
         pairingPort = null
         discoverPairingPort(
@@ -88,11 +88,20 @@ object LocalAdbEngine {
     ) {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
+        val wifi = ctx.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val multicastLock = runCatching {
+            wifi.createMulticastLock("AppleSeedIMS-mdns").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }.getOrNull()
         val finished = AtomicBoolean(false)
         lateinit var listener: NsdManager.DiscoveryListener
 
-        fun stop() {
+        fun finish() {
+            if (!finished.compareAndSet(false, true)) return
             runCatching { nsd.stopServiceDiscovery(listener) }
+            runCatching { multicastLock?.release() }
         }
 
         listener = object : NsdManager.DiscoveryListener {
@@ -108,16 +117,18 @@ object LocalAdbEngine {
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
-                            // Do NOT stop discovery here. Android can report a stale
-                            // service first; keep scanning for the live endpoint.
+                            // A stale service can fail to resolve. Keep scanning.
                             Log.w(TAG, "mDNS resolve failed: type=$serviceType code=$errorCode")
                         }
 
                         override fun onServiceResolved(info: NsdServiceInfo) {
-                            if (!finished.compareAndSet(false, true)) return
+                            if (finished.get()) return
                             save(info)
-                            stop()
-                            onFound(info.port)
+                            if (finished.compareAndSet(false, true)) {
+                                runCatching { nsd.stopServiceDiscovery(listener) }
+                                runCatching { multicastLock?.release() }
+                                onFound(info.port)
+                            }
                         }
                     })
                 }.onFailure {
@@ -133,6 +144,7 @@ object LocalAdbEngine {
 
             override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
                 if (finished.compareAndSet(false, true)) {
+                    runCatching { multicastLock?.release() }
                     onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
                 }
             }
@@ -143,15 +155,18 @@ object LocalAdbEngine {
         runCatching {
             nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
         }.onFailure {
-            if (finished.compareAndSet(false, true)) onError("Không bắt đầu được mDNS: ${it.message}")
+            if (finished.compareAndSet(false, true)) {
+                runCatching { multicastLock?.release() }
+                onError("Không bắt đầu được mDNS: ${it.message}")
+            }
             return
         }
 
-        // Never leave a discovery listener hanging forever.
         Thread {
             Thread.sleep(DISCOVERY_TIMEOUT_MS)
             if (finished.compareAndSet(false, true)) {
-                stop()
+                runCatching { nsd.stopServiceDiscovery(listener) }
+                runCatching { multicastLock?.release() }
                 onError("Không tìm thấy $serviceType trong ${DISCOVERY_TIMEOUT_MS / 1000}s")
             }
         }.start()
@@ -163,9 +178,6 @@ object LocalAdbEngine {
             return onDone(false, "Mã Pair phải đủ 6 chữ số")
         }
 
-        // The pairing port exists only while the Android pairing dialog is open.
-        // Prefer the endpoint discovered while that dialog is open; if it is not
-        // available yet, start a fresh discovery now.
         val cachedPort = pairingPort
         pairingPort = null
         connectPort = null
@@ -176,9 +188,7 @@ object LocalAdbEngine {
                 return
             }
             discoverConnectPort(
-                onFound = { found ->
-                    connect(found, onDone)
-                },
+                onFound = { found -> connect(found, onDone) },
                 onError = {
                     Thread {
                         Thread.sleep(700)
@@ -198,8 +208,6 @@ object LocalAdbEngine {
                 }.onFailure { error ->
                     Log.e(TAG, "PAIR failed on port $port", error)
                     if (allowRediscover) {
-                        // The temporary pairing port can rotate. Re-discover once
-                        // and retry the same 6-digit code while the dialog is open.
                         discoverPairingPort(
                             onFound = { fresh -> doPair(fresh, false) },
                             onError = { message -> onDone(false, "PAIR FAILED: ${error.message ?: message}") }
@@ -222,6 +230,7 @@ object LocalAdbEngine {
     }
 
     fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+        if (activeKadb != null) return onDone(true, "WIRELESS ADB ONLINE")
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val target = port ?: return discoverConnectPort(
             onFound = { found -> connect(found, onDone) },
