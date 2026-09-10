@@ -176,7 +176,9 @@ class MainActivity : ComponentActivity() {
                             })
                         1 -> CarrierScreen(evidence, busy) { broker("read") }
                         2 -> PatchScreen(volte, vowifi, vonr, busy,
-                            { volte = it }, { vowifi = it }, { vonr = it },
+                            setVolte = { volte = it },
+                            setVowifi = { vowifi = it },
+                            setVonr = { vonr = it },
                             apply = {
                                 val patch = listOf(
                                     "carrier_volte_available_bool=$volte",
@@ -241,9 +243,9 @@ class MainActivity : ComponentActivity() {
                 Data("PHONE PERMISSION", if (permission) "GRANTED" else "NOT GRANTED")
                 Data("ADB", adb)
                 if (!permission) Button(onClick = requestPermission) { Text("CẤP PHONE PERMISSION") }
-                OutlinedButton(onClick = openSettings, Modifier.fillMaxWidth()) { Text("MỞ DEVELOPER OPTIONS") }
-                Button(onClick = pair, Modifier.fillMaxWidth()) { Text("PAIR WIRELESS DEBUGGING") }
-                OutlinedButton(onClick = reconnect, Modifier.fillMaxWidth()) { Text("RECONNECT ĐÃ PAIR") }
+                OutlinedButton(onClick = openSettings, modifier = Modifier.fillMaxWidth()) { Text("MỞ DEVELOPER OPTIONS") }
+                Button(onClick = pair, modifier = Modifier.fillMaxWidth()) { Text("PAIR WIRELESS DEBUGGING") }
+                OutlinedButton(onClick = reconnect, modifier = Modifier.fillMaxWidth()) { Text("RECONNECT ĐÃ PAIR") }
             }
         }
     }
@@ -262,11 +264,11 @@ class MainActivity : ComponentActivity() {
                 Toggle("VoWiFi", vowifi, setVowifi)
                 Toggle("VoNR", vonr, setVonr)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = apply, enabled = !busy, Modifier.fillMaxWidth()) { Text("APPLY + RESET IMS") }
+                Button(onClick = apply, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("APPLY + RESET IMS") }
                 Spacer(Modifier.height(5.dp))
-                OutlinedButton(onClick = verify, enabled = !busy, Modifier.fillMaxWidth()) { Text("VERIFY CONFIG") }
+                OutlinedButton(onClick = verify, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("VERIFY CONFIG") }
                 Spacer(Modifier.height(5.dp))
-                OutlinedButton(onClick = restore, enabled = !busy, Modifier.fillMaxWidth()) { Text("RESTORE OVERRIDE") }
+                OutlinedButton(onClick = restore, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("RESTORE OVERRIDE") }
             }
         }
     }
