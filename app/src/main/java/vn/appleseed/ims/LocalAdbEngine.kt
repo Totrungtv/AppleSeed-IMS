@@ -53,7 +53,7 @@ object LocalAdbEngine {
 
     fun openWirelessDebuggingSettings(context: Context) {
         runCatching {
-            context.startActivity(android.content.Intent(Settings.ACTION_SETTINGS).apply {
+            context.startActivity(android.content.Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
                 addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             })
         }
@@ -61,7 +61,6 @@ object LocalAdbEngine {
 
     fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
-        stopDiscovery(PAIRING_SERVICE)
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String?) = Unit
@@ -75,7 +74,6 @@ object LocalAdbEngine {
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             pairingPort = info.port
                             onFound(info.port)
-                            runCatching { nsd.stopServiceDiscovery(this@object) }
                         }
                     })
                 } catch (e: Exception) {
@@ -114,7 +112,6 @@ object LocalAdbEngine {
 
     fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
-        stopDiscovery(CONNECT_SERVICE)
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String?) = Unit
@@ -128,7 +125,6 @@ object LocalAdbEngine {
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             connectPort = info.port
                             onFound(info.port)
-                            runCatching { nsd.stopServiceDiscovery(this@object) }
                         }
                     })
                 } catch (e: Exception) {
@@ -210,10 +206,5 @@ object LocalAdbEngine {
     fun close() {
         runCatching { activeKadb?.close() }
         activeKadb = null
-    }
-
-    private fun stopDiscovery(serviceType: String) {
-        // Discovery listeners are intentionally short-lived; Android handles completed listeners.
-        // This method exists to keep the engine API explicit and safe for repeated scans.
     }
 }
