@@ -22,13 +22,14 @@ object LocalAdbEngine {
     private const val LOOPBACK = "127.0.0.1"
     private const val PREFS = "apple_seed_adb"
     private const val DISCOVERY_TIMEOUT_MS = 30000L
-    private const val AUTO_CONNECT_RETRY_MS = 5000L
+    private const val AUTO_CONNECT_RETRY_MS = 3000L
 
     private var appContext: Context? = null
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
     private var pairingPort: Int? = null
     private val pairingDiscoveryActive = AtomicBoolean(false)
+    private val pairingDiscoveryInFlight = AtomicBoolean(false)
     private val connectDiscoveryActive = AtomicBoolean(false)
     private val autoConnectActive = AtomicBoolean(false)
     private val configured = AtomicBoolean(false)
@@ -44,13 +45,15 @@ object LocalAdbEngine {
                 additionalPrivateKeysPem = emptyList()
             )
             KadbCert.ensureReady()
+            connectPort = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt("connect_port", 0).takeIf { it > 0 }
             startAutoConnect()
         }.onFailure { Log.e(TAG, "Kadb certificate initialization failed", it) }
     }
 
     fun status(): String = when {
         activeKadb != null -> "WIRELESS ADB ONLINE"
-        connectPort != null -> "PAIRED — READY TO CONNECT"
+        connectPort != null -> "AUTO CONNECTING..."
         else -> "WIRELESS DEBUGGING OFFLINE"
     }
 
@@ -67,10 +70,17 @@ object LocalAdbEngine {
         Thread {
             while (autoConnectActive.get()) {
                 if (activeKadb == null && !connectDiscoveryActive.get()) {
-                    discoverConnectPort(
-                        onFound = { found -> connect(found) },
-                        onError = { Log.d(TAG, "AUTO CONNECT retry: $it") }
-                    )
+                    val saved = connectPort
+                    if (saved != null) {
+                        connect(saved) { ok, message ->
+                            if (!ok) Log.d(TAG, "AUTO saved-port connect failed: $message")
+                        }
+                    } else {
+                        discoverConnectPort(
+                            onFound = { found -> connect(found) },
+                            onError = { Log.d(TAG, "AUTO CONNECT discovery retry: $it") }
+                        )
+                    }
                 }
                 Thread.sleep(AUTO_CONNECT_RETRY_MS)
             }
@@ -78,23 +88,25 @@ object LocalAdbEngine {
     }
 
     fun preparePairing() {
-        if (!pairingDiscoveryActive.compareAndSet(false, true)) return
+        pairingDiscoveryActive.set(true)
+        if (!pairingDiscoveryInFlight.compareAndSet(false, true)) return
         pairingPort = null
-        Thread {
-            while (pairingDiscoveryActive.get()) {
-                if (pairingPort == null && pairingDiscoveryActive.compareAndSet(true, true)) {
-                    discoverPairingPort(
-                        onFound = { found -> Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found") },
-                        onError = { error -> Log.d(TAG, "PAIR discovery retry: $error") }
-                    )
-                }
-                Thread.sleep(1000)
+        discoverPairingPort(
+            onFound = { found ->
+                pairingPort = found
+                pairingDiscoveryInFlight.set(false)
+                Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found")
+            },
+            onError = { error ->
+                pairingDiscoveryInFlight.set(false)
+                if (pairingDiscoveryActive.get()) Log.d(TAG, "PAIR discovery failed: $error")
             }
-        }.start()
+        )
     }
 
     fun stopPairingDiscovery() {
         pairingDiscoveryActive.set(false)
+        pairingDiscoveryInFlight.set(false)
     }
 
     fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
@@ -136,6 +148,7 @@ object LocalAdbEngine {
         fun finish() {
             if (!finished.compareAndSet(false, true)) return
             if (serviceType == CONNECT_SERVICE) connectDiscoveryActive.set(false)
+            if (serviceType == PAIRING_SERVICE) pairingDiscoveryInFlight.set(false)
             runCatching { nsd.stopServiceDiscovery(listener) }
             runCatching { multicastLock?.release() }
         }
