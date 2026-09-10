@@ -38,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,24 +65,19 @@ private val Good = Color(0xFF55E6A5)
 private val Warn = Color(0xFFFFC857)
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { AppleSeedImsApp() }
     }
 
     private fun phonePermission(): Boolean =
-        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) ==
-            PackageManager.PERMISSION_GRANTED
+        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
     private fun snapshot(): DeviceSnapshot {
         val tm = getSystemService(TelephonyManager::class.java)
         val sm = getSystemService(SubscriptionManager::class.java)
-
-        fun safe(block: () -> String): String =
-            runCatching { block() }.getOrDefault("--").ifBlank { "--" }
-
+        fun safe(block: () -> String): String = runCatching { block() }.getOrDefault("--").ifBlank { "--" }
         fun networkType(type: Int): String = when (type) {
             TelephonyManager.NETWORK_TYPE_LTE -> "LTE / 4G"
             TelephonyManager.NETWORK_TYPE_NR -> "NR / 5G"
@@ -91,7 +85,6 @@ class MainActivity : ComponentActivity() {
             TelephonyManager.NETWORK_TYPE_GSM -> "GSM / 2G"
             else -> "Unknown ($type)"
         }
-
         return DeviceSnapshot(
             manufacturer = Build.MANUFACTURER,
             model = Build.MODEL,
@@ -119,7 +112,6 @@ class MainActivity : ComponentActivity() {
         }
         val tabs = listOf("OVERVIEW", "IMS", "CARRIER", "TOOLS")
         val icons = listOf("⌂", "◎", "▣", "⚙")
-
         MaterialTheme {
             Scaffold(
                 containerColor = Bg,
@@ -141,10 +133,7 @@ class MainActivity : ComponentActivity() {
                 }
             ) { padding ->
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .verticalScroll(rememberScrollState())
+                    modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
                 ) {
                     Header(shizukuStatus)
                     when (tab) {
@@ -192,29 +181,21 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Header(status: String) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Panel)
-                .padding(horizontal = 18.dp, vertical = 18.dp),
+            modifier = Modifier.fillMaxWidth().background(Panel).padding(horizontal = 18.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(Accent, RoundedCornerShape(14.dp)),
-                    contentAlignment = Alignment.Center
-                ) { Text("🍎", style = MaterialTheme.typography.titleLarge) }
+                Box(modifier = Modifier.size(48.dp).background(Accent, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                    Text("🍎", style = MaterialTheme.typography.titleLarge)
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text("APPLE SEED", color = TextMain, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
                     Text("IMS / VoLTE TECH WORKSTATION", color = TextMuted, style = MaterialTheme.typography.labelSmall)
                 }
-                Box(
-                    modifier = Modifier
-                        .background(Color(0xFF1D2229), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 9.dp, vertical = 6.dp)
-                ) { Text("VIP", color = Accent, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall) }
+                Box(modifier = Modifier.background(Color(0xFF1D2229), RoundedCornerShape(10.dp)).padding(horizontal = 9.dp, vertical = 6.dp)) {
+                    Text("VIP", color = Accent, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
+                }
             }
             StatusPill(status)
         }
@@ -225,11 +206,7 @@ class MainActivity : ComponentActivity() {
         val good = status.contains("ONLINE")
         val textColor = if (good) Good else Warn
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF181D23), RoundedCornerShape(11.dp))
-                .border(1.dp, Line, RoundedCornerShape(11.dp))
-                .padding(horizontal = 12.dp, vertical = 9.dp),
+            modifier = Modifier.fillMaxWidth().background(Color(0xFF181D23), RoundedCornerShape(11.dp)).border(1.dp, Line, RoundedCornerShape(11.dp)).padding(horizontal = 12.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("●", color = textColor, fontWeight = FontWeight.Bold)
@@ -262,9 +239,7 @@ class MainActivity : ComponentActivity() {
             DataRow("SHIZUKU", shizukuStatus, if (shizukuStatus.contains("ONLINE")) Good else Warn)
             Spacer(Modifier.height(5.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                if (!permission) {
-                    PrimaryButton("CẤP QUYỀN", requestPermission, Modifier.weight(1f))
-                }
+                if (!permission) PrimaryButton("CẤP QUYỀN", requestPermission, Modifier.weight(1f))
                 OutlineButton("KẾT NỐI SHIZUKU", connectShizuku, Modifier.weight(1f))
             }
             Spacer(Modifier.height(1.dp))
@@ -352,9 +327,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun InfoCard(title: String, icon: String, content: @Composable ColumnScope.() -> Unit) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 5.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Panel2),
             border = androidx.compose.foundation.BorderStroke(1.dp, Line)
@@ -381,13 +354,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun StatusRow(label: String, value: String, color: Color) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF101419), RoundedCornerShape(9.dp))
-                .padding(horizontal = 10.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF101419), RoundedCornerShape(9.dp)).padding(horizontal = 10.dp, vertical = 9.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, color = TextMuted, style = MaterialTheme.typography.labelSmall)
             Text("●  $value", color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
         }
@@ -395,10 +362,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun WorkflowRow(no: String, name: String, tag: String) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(no, color = Accent, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(28.dp))
             Text(name, color = TextMain, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             Text(tag, color = TextMuted, style = MaterialTheme.typography.labelSmall)
@@ -407,12 +371,9 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun PrimaryButton(text: String, action: () -> Unit, modifier: Modifier) {
-        Button(
-            onClick = action,
-            modifier = modifier.height(46.dp),
-            shape = RoundedCornerShape(11.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White)
-        ) { Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium) }
+        Button(onClick = action, modifier = modifier.height(46.dp), shape = RoundedCornerShape(11.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White)) {
+            Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        }
     }
 
     @Composable
@@ -421,9 +382,10 @@ class MainActivity : ComponentActivity() {
             onClick = action,
             modifier = modifier.height(46.dp),
             shape = RoundedCornerShape(11.dp),
-            border = OutlinedButtonDefaults.outlinedButtonBorder(enabled = true),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = TextMain)
-        ) { Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) }
+        ) {
+            Text(text, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+        }
     }
 
     @Composable
