@@ -110,7 +110,7 @@ class MainActivity : ComponentActivity() {
                 title = { Text("PAIR WIRELESS DEBUGGING") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Mở Wireless debugging → Pair device with pairing code.", color = Muted)
+                        Text("Trên điện thoại: Wireless debugging → Pair device with pairing code.\nNhập mã 6 số vào ô dưới rồi bấm PAIR.", color = Muted)
                         OutlinedTextField(
                             value = pairCode,
                             onValueChange = { pairCode = it.filter(Char::isDigit).take(6) },
@@ -163,11 +163,9 @@ class MainActivity : ComponentActivity() {
                             requestPermission = { permissionLauncher.launch(Manifest.permission.READ_PHONE_STATE) },
                             openSettings = { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) },
                             pair = {
-                                adb = "SEARCHING PAIRING SERVICE..."
-                                LocalAdbEngine.discoverPairingPort(
-                                    onFound = { runOnUiThread { adb = "PAIRING PORT FOUND"; pairDialog = true } },
-                                    onError = { err -> runOnUiThread { adb = "WIRELESS DEBUGGING OFFLINE"; android.widget.Toast.makeText(this@MainActivity, err, android.widget.Toast.LENGTH_LONG).show() } }
-                                )
+                                adb = "ENTER 6-DIGIT PAIRING CODE"
+                                pairCode = ""
+                                pairDialog = true
                             },
                             reconnect = {
                                 adb = "CONNECTING..."
@@ -318,20 +316,21 @@ class MainActivity : ComponentActivity() {
     @Composable private fun Section(title: String, subtitle: String) {
         Column(Modifier.padding(16.dp)) {
             Text(title, color = MainText, fontWeight = FontWeight.ExtraBold)
-            Text(subtitle, color = Muted, fontSize = 11.sp)
+            Text(subtitle, color = Muted, fontSize = 10.sp)
         }
     }
 
     @Composable private fun Data(label: String, value: String) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, color = Muted, fontSize = 11.sp)
-            Text(value, color = MainText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(label, color = Muted, fontSize = 10.sp)
+            Text(value, color = MainText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 
     @Composable private fun Evidence(text: String) {
-        if (text.isNotBlank()) Card(Modifier.fillMaxWidth().padding(12.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
-            Text(text.takeLast(30000), color = Color(0xFFB9C3CC), fontSize = 10.sp, modifier = Modifier.padding(12.dp))
+        if (text.isBlank()) return
+        Card(Modifier.fillMaxWidth().padding(12.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
+            Text(text, Modifier.padding(14.dp), color = MainText, fontSize = 10.sp)
         }
     }
 }
