@@ -12,14 +12,13 @@ import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.AtomicBoolean
 
 object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
     private const val PAIRING_SERVICE = "_adb-tls-pairing._tcp"
     private const val CONNECT_SERVICE = "_adb-tls-connect._tcp"
     private const val PREFS = "apple_seed_adb"
-    private const val RESULT_FILE = "apple_seed_carrier_result.txt"
     private var appContext: Context? = null
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
@@ -69,19 +68,14 @@ object LocalAdbEngine {
                 if (serviceInfo.serviceType?.contains(serviceType) != true) return
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) =
-                            onError("Không resolve được ADB service ($errorCode)")
-                        override fun onServiceResolved(info: NsdServiceInfo) {
-                            save(info)
-                            onFound(info.port)
-                        }
+                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) = onError("Không resolve được ADB service ($errorCode)")
+                        override fun onServiceResolved(info: NsdServiceInfo) { save(info); onFound(info.port) }
                     })
                 }.onFailure { onError("Resolve service lỗi: ${it.message}") }
             }
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
             override fun onDiscoveryStopped(serviceType: String?) = Unit
-            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) =
-                onError("Wireless Debugging service không khả dụng ($errorCode)")
+            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) = onError("Wireless Debugging service không khả dụng ($errorCode)")
             override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
         }
         runCatching { nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener) }
@@ -89,7 +83,6 @@ object LocalAdbEngine {
     }
 
     fun pair(code: String, onDone: (Boolean, String) -> Unit) {
-        val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val port = pairingPort ?: return onDone(false, "Chưa tìm thấy pairing port")
         Thread {
             runCatching {
@@ -128,8 +121,7 @@ object LocalAdbEngine {
     fun reconnectSaved(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
         val saved = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("connect_port", 0)
-        if (saved > 0) connect(saved, onDone)
-        else discoverConnectPort(
+        if (saved > 0) connect(saved, onDone) else discoverConnectPort(
             onFound = { found -> connect(found, onDone) },
             onError = { error -> onDone(false, error) }
         )
@@ -156,9 +148,12 @@ object LocalAdbEngine {
                 val safePatch = patch.replace("'", "")
                 val cmd = "am instrument -w -e mode $mode -e subId $subId -e patch '$safePatch' vn.appleseed.ims/vn.appleseed.ims.BrokerInstrumentation"
                 val result = adb.shell(cmd)
-                val evidence = adb.shell("cat $RESULT_FILE")
-                if (result.exitCode == 0 && !evidence.startsWith("cat:")) onDone(true, evidence.trim())
-                else onDone(false, "BROKER EXIT ${result.exitCode}: ${result.output.trim()}\n$evidence")
+                val evidence = result.output.lineSequence()
+                    .firstOrNull { it.startsWith("INSTRUMENTATION_STATUS: evidence_b64=") }
+                    ?.substringAfter("evidence_b64=")
+                    ?.let { android.util.Base64.decode(it.trim(), android.util.Base64.DEFAULT).toString(Charsets.UTF_8) }
+                if (result.exitCode == 0 && evidence != null) onDone(true, evidence)
+                else onDone(false, "BROKER EXIT ${result.exitCode}: ${result.output.trim()}")
             }.onFailure { onDone(false, "BROKER ERROR: ${it.message ?: it.javaClass.simpleName}") }
         }.start()
     }
