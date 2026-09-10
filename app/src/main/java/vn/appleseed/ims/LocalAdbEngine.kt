@@ -12,7 +12,7 @@ import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.AtomicBoolean
 
 object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
@@ -20,6 +20,8 @@ object LocalAdbEngine {
     private const val CONNECT_SERVICE = "_adb-tls-connect._tcp"
     private const val LOOPBACK = "127.0.0.1"
     private const val PREFS = "apple_seed_adb"
+    private const val DISCOVERY_TIMEOUT_MS = 8000L
+
     private var appContext: Context? = null
     private var activeKadb: Kadb? = null
     private var connectPort: Int? = null
@@ -55,12 +57,27 @@ object LocalAdbEngine {
         })
     }
 
+    /** Start looking for the temporary pairing endpoint before the user submits the code. */
+    fun preparePairing() {
+        pairingPort = null
+        discoverPairingPort(
+            onFound = { found -> Log.i(TAG, "PAIR endpoint ready: $LOOPBACK:$found") },
+            onError = { error -> Log.w(TAG, "PAIR endpoint not ready yet: $error") }
+        )
+    }
+
     fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
-        discover(PAIRING_SERVICE, onFound, onError) { info -> pairingPort = info.port }
+        discover(PAIRING_SERVICE, onFound, onError) { info ->
+            pairingPort = info.port
+            Log.i(TAG, "Resolved pairing service: name=${info.serviceName}, host=${info.host}, port=${info.port}")
+        }
     }
 
     fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
-        discover(CONNECT_SERVICE, onFound, onError) { info -> connectPort = info.port }
+        discover(CONNECT_SERVICE, onFound, onError) { info ->
+            connectPort = info.port
+            Log.i(TAG, "Resolved connect service: name=${info.serviceName}, host=${info.host}, port=${info.port}")
+        }
     }
 
     private fun discover(
@@ -73,46 +90,71 @@ object LocalAdbEngine {
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
         val finished = AtomicBoolean(false)
         lateinit var listener: NsdManager.DiscoveryListener
+
+        fun stop() {
+            runCatching { nsd.stopServiceDiscovery(listener) }
+        }
+
         listener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(serviceType: String?) = Unit
+            override fun onDiscoveryStarted(serviceType: String?) {
+                Log.d(TAG, "mDNS discovery started: $serviceType")
+            }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (finished.get()) return
                 if (serviceInfo.serviceType?.contains(serviceType) != true) return
+
+                Log.d(TAG, "mDNS service found: type=${serviceInfo.serviceType}, name=${serviceInfo.serviceName}")
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
-                            if (finished.compareAndSet(false, true)) {
-                                runCatching { nsd.stopServiceDiscovery(listener) }
-                                onError("Không resolve được ADB service ($errorCode)")
-                            }
+                            // Do NOT stop discovery here. Android can report a stale
+                            // service first; keep scanning for the live endpoint.
+                            Log.w(TAG, "mDNS resolve failed: type=$serviceType code=$errorCode")
                         }
 
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             if (!finished.compareAndSet(false, true)) return
                             save(info)
-                            runCatching { nsd.stopServiceDiscovery(listener) }
+                            stop()
                             onFound(info.port)
                         }
                     })
                 }.onFailure {
-                    if (finished.compareAndSet(false, true)) {
-                        runCatching { nsd.stopServiceDiscovery(listener) }
-                        onError("Resolve service lỗi: ${it.message}")
-                    }
+                    Log.w(TAG, "mDNS resolve request failed: ${it.message}")
                 }
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
-            override fun onDiscoveryStopped(serviceType: String?) = Unit
-            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
-                if (finished.compareAndSet(false, true)) onError("Wireless Debugging service không khả dụng ($errorCode)")
+
+            override fun onDiscoveryStopped(serviceType: String?) {
+                Log.d(TAG, "mDNS discovery stopped: $serviceType")
             }
+
+            override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) {
+                if (finished.compareAndSet(false, true)) {
+                    onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
+                }
+            }
+
             override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
         }
+
         runCatching {
             nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
-        }.onFailure { onError("Không bắt đầu được mDNS: ${it.message}") }
+        }.onFailure {
+            if (finished.compareAndSet(false, true)) onError("Không bắt đầu được mDNS: ${it.message}")
+            return
+        }
+
+        // Never leave a discovery listener hanging forever.
+        Thread {
+            Thread.sleep(DISCOVERY_TIMEOUT_MS)
+            if (finished.compareAndSet(false, true)) {
+                stop()
+                onError("Không tìm thấy $serviceType trong ${DISCOVERY_TIMEOUT_MS / 1000}s")
+            }
+        }.start()
     }
 
     fun pair(code: String, onDone: (Boolean, String) -> Unit) {
@@ -121,45 +163,62 @@ object LocalAdbEngine {
             return onDone(false, "Mã Pair phải đủ 6 chữ số")
         }
 
-        // Pairing port is temporary. Always discover a fresh port for the
-        // currently displayed Android pairing dialog; never reuse an old one.
+        // The pairing port exists only while the Android pairing dialog is open.
+        // Prefer the endpoint discovered while that dialog is open; if it is not
+        // available yet, start a fresh discovery now.
+        val cachedPort = pairingPort
         pairingPort = null
         connectPort = null
 
         fun waitForConnect(attempt: Int = 0) {
-            if (attempt >= 10) {
-                onDone(false, "PAIR OK nhưng chưa thấy cổng CONNECT. Mở lại Wireless debugging và thử mã mới.")
+            if (attempt >= 8) {
+                onDone(false, "PAIR OK nhưng chưa tìm thấy cổng CONNECT. Giữ Wireless debugging ON rồi thử lại.")
                 return
             }
             discoverConnectPort(
-                onFound = { found -> onDone(true, "PAIR OK — connect port $found") },
+                onFound = { found ->
+                    connect(found, onDone)
+                },
                 onError = {
                     Thread {
-                        Thread.sleep(1000)
+                        Thread.sleep(700)
                         waitForConnect(attempt + 1)
                     }.start()
                 }
             )
         }
 
-        fun doPair(port: Int) {
+        fun doPair(port: Int, allowRediscover: Boolean) {
             Thread {
                 runCatching {
                     Log.i(TAG, "PAIR start: $LOOPBACK:$port")
                     runBlocking { Kadb.pair(LOOPBACK, port, cleanCode, "Apple Seed IMS") }
                     Log.i(TAG, "PAIR handshake OK")
                     waitForConnect()
-                }.onFailure {
-                    Log.e(TAG, "PAIR failed", it)
-                    onDone(false, "PAIR FAILED: ${it.message ?: it.javaClass.simpleName}")
+                }.onFailure { error ->
+                    Log.e(TAG, "PAIR failed on port $port", error)
+                    if (allowRediscover) {
+                        // The temporary pairing port can rotate. Re-discover once
+                        // and retry the same 6-digit code while the dialog is open.
+                        discoverPairingPort(
+                            onFound = { fresh -> doPair(fresh, false) },
+                            onError = { message -> onDone(false, "PAIR FAILED: ${error.message ?: message}") }
+                        )
+                    } else {
+                        onDone(false, "PAIR FAILED: ${error.message ?: error.javaClass.simpleName}")
+                    }
                 }
             }.start()
         }
 
-        discoverPairingPort(
-            onFound = { found -> doPair(found) },
-            onError = { error -> onDone(false, error) }
-        )
+        if (cachedPort != null) {
+            doPair(cachedPort, true)
+        } else {
+            discoverPairingPort(
+                onFound = { found -> doPair(found, true) },
+                onError = { error -> onDone(false, error) }
+            )
+        }
     }
 
     fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
