@@ -1,12 +1,10 @@
 package vn.appleseed.ims
 
-import android.net.Uri
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Bundle
-import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.io.FileInputStream
 import java.security.MessageDigest
 
 private val VirusBg = Color(0xFF05070A)
@@ -42,7 +41,17 @@ private val VirusGood = Color(0xFF42E6A4)
 private val VirusWarn = Color(0xFFFFC857)
 private val VirusDanger = Color(0xFFFF667A)
 
+private data class AppScan(
+    val label: String,
+    val packageName: String,
+    val score: Int,
+    val reasons: List<String>,
+    val sha256: String
+)
+
 class VirusScannerActivity : ComponentActivity() {
+    private val pm by lazy { packageManager }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { VirusScannerScreen() }
@@ -51,21 +60,19 @@ class VirusScannerActivity : ComponentActivity() {
     @Composable
     private fun VirusScannerScreen() {
         var scanning by remember { mutableStateOf(false) }
-        var result by remember { mutableStateOf("Chưa chọn file. Hãy chọn một file để Apple Seed phân tích.") }
-        var fileName by remember { mutableStateOf("") }
+        var result by remember { mutableStateOf("Sẵn sàng quét toàn bộ ứng dụng trên máy.") }
+        var findings by remember { mutableStateOf<List<AppScan>>(emptyList()) }
 
-        val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-            if (uri == null) {
-                result = "Đã hủy chọn file."
-                return@rememberLauncherForActivityResult
-            }
+        fun scanAll() {
+            if (scanning) return
             scanning = true
-            result = "Đang đọc và phân tích file..."
+            result = "ĐANG QUÉT TOÀN BỘ ỨNG DỤNG... Không cần chọn file, không cần Wireless ADB."
             Thread {
-                val analysis = analyzeFile(uri)
+                val scanResult = runCatching { scanInstalledApps() }
+                    .getOrElse { ScanResult(emptyList(), "QUÉT THẤT BẠI: ${it.message ?: "Lỗi không xác định."}") }
                 runOnUiThread {
-                    fileName = analysis.name
-                    result = analysis.message
+                    findings = scanResult.findings
+                    result = scanResult.message
                     scanning = false
                 }
             }.start()
@@ -73,24 +80,30 @@ class VirusScannerActivity : ComponentActivity() {
 
         MaterialTheme(colorScheme = darkColorScheme(primary = VirusCyan, background = VirusBg, surface = VirusPanel, onSurface = VirusText, error = VirusDanger)) {
             Column(Modifier.fillMaxSize().background(VirusBg).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("APPLE SEED • QUÉT VIRUS FILE", color = VirusText, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                Text("CHỨC NĂNG ĐỘC LẬP • KHÔNG CẦN WIRELESS ADB", color = VirusCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Text("Chọn APK, ZIP hoặc file bất kỳ. Apple Seed đọc file cục bộ, tính SHA-256 và kiểm tra các dấu hiệu cơ bản. Không xóa file tự động.", color = VirusMuted, fontSize = 11.sp)
+                Text("APPLE SEED • QUÉT VIRUS", color = VirusText, fontSize = 23.sp, fontWeight = FontWeight.Black)
+                Text("🦠 TỰ ĐỘNG QUÉT ỨNG DỤNG TRÊN MÁY • KHÔNG CẦN ADB", color = VirusCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Apple Seed tự lấy danh sách app, kiểm tra quyền nguy hiểm, dấu hiệu tự khởi động/hiển thị đè, nguồn cài đặt và SHA-256 của APK. Đây là kiểm tra nguy cơ cục bộ, không phải cơ sở dữ liệu antivirus thương mại.", color = VirusMuted, fontSize = 11.sp)
 
-                Button(onClick = { picker.launch(arrayOf("*/*")) }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (scanning) "ĐANG QUÉT FILE..." else "📁 CHỌN FILE ĐỂ QUÉT VIRUS")
+                Button(onClick = { scanAll() }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (scanning) "🔎 ĐANG QUÉT..." else "🦠 QUÉT TOÀN BỘ MÁY")
+                }
+                Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
+                    Text(result, color = when {
+                        result.startsWith("QUÉT THẤT BẠI") -> VirusDanger
+                        findings.isNotEmpty() -> VirusWarn
+                        else -> VirusGood
+                    }, fontSize = 11.sp, modifier = Modifier.padding(14.dp))
                 }
 
-                if (fileName.isNotBlank()) {
+                findings.forEach { app ->
                     Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(fileName, color = VirusText, fontWeight = FontWeight.Bold)
-                            Text(result, color = if (result.contains("NGUY HIỂM")) VirusDanger else if (result.contains("NGHI VẤN")) VirusWarn else VirusGood, fontSize = 11.sp)
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(app.label, color = VirusText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(app.packageName, color = VirusMuted, fontSize = 10.sp)
+                            Text("MỨC NGHI VẤN: ${app.score}/10", color = if (app.score >= 7) VirusDanger else VirusWarn, fontWeight = FontWeight.Black)
+                            Text(app.reasons.joinToString(" • "), color = VirusMuted, fontSize = 10.sp)
+                            if (app.sha256.isNotBlank()) Text("SHA-256: ${app.sha256}", color = VirusMuted, fontSize = 8.sp)
                         }
-                    }
-                } else {
-                    Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
-                        Text(result, color = VirusMuted, modifier = Modifier.padding(14.dp), fontSize = 11.sp)
                     }
                 }
 
@@ -101,39 +114,74 @@ class VirusScannerActivity : ComponentActivity() {
         }
     }
 
-    private data class Analysis(val name: String, val message: String)
+    private data class ScanResult(val findings: List<AppScan>, val message: String)
 
-    private fun analyzeFile(uri: Uri): Analysis {
-        val name = contentName(uri)
-        return runCatching {
-            val digest = MessageDigest.getInstance("SHA-256")
-            var total = 0L
-            val buffer = ByteArray(64 * 1024)
-            contentResolver.openInputStream(uri)?.use { input ->
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n <= 0) break
-                    digest.update(buffer, 0, n)
-                    total += n
-                    if (total > 200L * 1024L * 1024L) throw IllegalArgumentException("File quá lớn, giới hạn 200 MB.")
-                }
-            } ?: throw IllegalStateException("Không đọc được file.")
-            val sha256 = digest.digest().joinToString("") { "%02x".format(it) }
-            val lower = name.lowercase()
-            val apk = lower.endsWith(".apk") || lower.endsWith(".xapk") || lower.endsWith(".apks")
-            val suspiciousName = listOf("crack", "hack", "mod", "keygen", "cheat", "inject", "trojan", "malware", "virus").any { lower.contains(it) }
-            val flags = buildList {
-                if (apk) add("APK")
-                if (suspiciousName) add("tên file đáng ngờ")
-            }
-            val verdict = if (suspiciousName) "NGUY HIỂM / CẦN KIỂM TRA KỸ" else if (apk) "NGHI VẤN THẤP — APK CẦN ĐỐI CHIẾU NGUỒN" else "CHƯA PHÁT HIỆN DẤU HIỆU ĐÁNG NGỜ CƠ BẢN"
-            Analysis(name, "KẾT QUẢ: $verdict\nDung lượng: $total bytes\nSHA-256: $sha256\nDấu hiệu: ${flags.joinToString(", ").ifBlank { "không có" }}")
-        }.getOrElse { Analysis(name, "QUÉT THẤT BẠI: ${it.message ?: "Không xác định được lỗi."}") }
+    private fun scanInstalledApps(): ScanResult {
+        val installed = runCatching {
+            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()))
+        }.getOrElse {
+            @Suppress("DEPRECATION")
+            pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        }
+
+        val userApps = installed.filter {
+            (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
+                (it.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0 &&
+                it.packageName != packageName
+        }
+        val findings = userApps.mapNotNull { analyzeApp(it) }.sortedByDescending { it.score }
+        val message = if (findings.isEmpty()) {
+            "QUÉT XONG: ${userApps.size} ứng dụng bên thứ ba được kiểm tra. Chưa thấy dấu hiệu nguy cơ cao theo bộ kiểm tra cục bộ."
+        } else {
+            "QUÉT XONG: ${userApps.size} ứng dụng được kiểm tra. Có ${findings.size} ứng dụng cần kiểm tra thêm. Không tự ý kết luận đây là virus."
+        }
+        return ScanResult(findings, message)
     }
 
-    private fun contentName(uri: Uri): String = runCatching {
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-            if (c.moveToFirst()) c.getString(0) else uri.lastPathSegment ?: "file"
-        } ?: uri.lastPathSegment ?: "file"
-    }.getOrDefault("file")
+    private fun analyzeApp(app: ApplicationInfo): AppScan? {
+        val permissions = runCatching {
+            @Suppress("DEPRECATION")
+            pm.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions?.toSet().orEmpty()
+        }.getOrDefault(emptySet())
+        var score = 0
+        val reasons = mutableListOf<String>()
+        fun flag(permission: String, points: Int, reason: String) {
+            if (permissions.contains(permission)) { score += points; reasons += reason }
+        }
+        flag("android.permission.SYSTEM_ALERT_WINDOW", 3, "HIỂN THỊ ĐÈ LÊN ỨNG DỤNG")
+        flag("android.permission.REQUEST_INSTALL_PACKAGES", 2, "CÓ QUYỀN CÀI APK")
+        flag("android.permission.RECEIVE_BOOT_COMPLETED", 1, "TỰ KHỞI ĐỘNG")
+        flag("android.permission.PACKAGE_USAGE_STATS", 1, "THEO DÕI ỨNG DỤNG")
+        flag("android.permission.READ_SMS", 2, "ĐỌC SMS")
+        flag("android.permission.RECEIVE_SMS", 2, "NHẬN SMS")
+        flag("android.permission.READ_CALL_LOG", 2, "ĐỌC LỊCH SỬ CUỘC GỌI")
+        flag("android.permission.RECORD_AUDIO", 1, "MICRO")
+        flag("android.permission.CAMERA", 1, "CAMERA")
+
+        val installer = runCatching { pm.getInstallSourceInfo(app.packageName).installingPackageName }.getOrNull()
+        if (installer == null || installer == "com.android.packageinstaller") { score += 1; reasons += "NGUỒN CÀI ĐẶT KHÔNG RÕ" }
+
+        val label = runCatching { pm.getApplicationLabel(app).toString() }.getOrDefault(app.packageName)
+        val suspiciousName = listOf("adware", "reward", "crack", "hack", "mod", "trojan", "malware", "virus", "booster").any {
+            label.contains(it, ignoreCase = true) || app.packageName.contains(it, ignoreCase = true)
+        }
+        if (suspiciousName) { score += 2; reasons += "TÊN ỨNG DỤNG ĐÁNG NGỜ" }
+
+        if (score < 3) return null
+        return AppScan(label, app.packageName, score.coerceAtMost(10), reasons.distinct(), sha256OfApk(app.sourceDir))
+    }
+
+    private fun sha256OfApk(path: String?): String = runCatching {
+        if (path.isNullOrBlank()) return ""
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(path).use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buffer)
+                if (n <= 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        digest.digest().joinToString("") { "%02x".format(it) }
+    }.getOrDefault("")
 }
