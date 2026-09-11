@@ -9,6 +9,7 @@ import android.net.wifi.WifiManager
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.flyfishxu.kadb.Kadb
 import com.flyfishxu.kadb.cert.KadbCert
 import com.flyfishxu.kadb.cert.KadbCertPolicy
@@ -18,6 +19,7 @@ import okio.Path.Companion.toPath
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
+@Suppress("unused")
 object LocalAdbEngine {
     private const val TAG = "AppleSeedADB"
     private const val PAIRING_SERVICE = "_adb-tls-pairing._tcp"
@@ -146,7 +148,7 @@ object LocalAdbEngine {
             onError(error)
         }) { info ->
             pairingPort = info.port
-            Log.i(TAG, "PAIR resolved ${info.host}:${info.port}")
+            Log.i(TAG, "PAIR resolved ${info.hostAddresses.firstOrNull()?.hostAddress ?: LOOPBACK}:${info.port}")
         }
     }
 
@@ -157,10 +159,11 @@ object LocalAdbEngine {
             onError(error)
         }) { info ->
             connectPort = info.port
-            Log.i(TAG, "CONNECT resolved ${info.host}:${info.port}")
+            Log.i(TAG, "CONNECT resolved ${info.hostAddresses.firstOrNull()?.hostAddress ?: LOOPBACK}:${info.port}")
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun discover(
         serviceType: String,
         onFound: (Int) -> Unit,
@@ -206,7 +209,7 @@ object LocalAdbEngine {
 
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             if (finished.get()) return
-                            Log.i(TAG, "mDNS RESOLVED $serviceType ${info.host}:${info.port}")
+                            Log.i(TAG, "mDNS RESOLVED $serviceType ${info.hostAddresses.firstOrNull()?.hostAddress ?: LOOPBACK}:${info.port}")
                             save(info)
                             finish()
                             onFound(info.port)
@@ -359,7 +362,7 @@ object LocalAdbEngine {
                 check(probe.exitCode == 0 && probe.output.contains("APPLE_SEED_ADB_OK")) { "ADB shell probe thất bại" }
                 activeKadb = adb
                 connectPort = target
-                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("connect_port", target).apply()
+                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putInt("connect_port", target) }
                 Log.i(TAG, "CONNECT ONLINE $LOOPBACK:$target")
                 onDone(true, "WIRELESS ADB ONLINE")
             }.onFailure {
