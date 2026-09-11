@@ -6,10 +6,13 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -74,24 +78,45 @@ class AdCleanerActivity : ComponentActivity() {
     private fun AdCleanerScreen() {
         val apps = remember { mutableStateListOf<SuspiciousApp>() }
         var scanning by remember { mutableStateOf(false) }
-        var message by remember { mutableStateOf("Sẵn sàng quét quảng cáo.") }
+        var message by remember { mutableStateOf("Sẵn sàng quét ứng dụng gây quảng cáo.") }
         var selected by remember { mutableStateOf<SuspiciousApp?>(null) }
         var confirmRemove by remember { mutableStateOf(false) }
+
+        val uninstallLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val app = selected
+            if (result.resultCode == RESULT_OK) {
+                if (app != null) {
+                    apps.removeAll { it.packageName == app.packageName }
+                    message = "GỠ THÀNH CÔNG: ${app.label}. Ứng dụng đã được Android xác nhận gỡ khỏi máy."
+                } else {
+                    message = "GỠ THÀNH CÔNG: Android đã xác nhận thao tác."
+                }
+            } else {
+                message = if (app != null) {
+                    "KHÔNG GỠ ĐƯỢC: ${app.label}. Người dùng đã hủy hoặc Android từ chối thao tác. Ứng dụng vẫn còn trên máy."
+                } else {
+                    "KHÔNG GỠ ĐƯỢC: Android không xác nhận thao tác."
+                }
+            }
+            selected = null
+        }
 
         fun scan() {
             if (scanning) return
             scanning = true
-            message = "Đang quét ứng dụng người dùng trực tiếp trên điện thoại..."
+            message = "Đang quét ứng dụng bên thứ ba trực tiếp trên điện thoại..."
             Thread {
-                val result = scanInstalledApps()
+                val result = runCatching { scanInstalledApps() }.getOrElse {
+                    emptyList()
+                }
                 runOnUiThread {
                     apps.clear()
                     apps.addAll(result)
                     scanning = false
                     message = if (result.isEmpty()) {
-                        "Không thấy ứng dụng bên thứ ba có mức nghi vấn cao."
+                        "ĐÃ QUÉT XONG: không thấy ứng dụng bên thứ ba có mức nghi vấn cao."
                     } else {
-                        "Phát hiện ${result.size} ứng dụng bên thứ ba cần kiểm tra. Ứng dụng hệ thống đã bị loại khỏi danh sách."
+                        "ĐÃ QUÉT XONG: phát hiện ${result.size} ứng dụng cần kiểm tra. APP HỆ THỐNG ĐÃ BỊ LOẠI KHỎI DANH SÁCH."
                     }
                 }
             }.start()
@@ -100,11 +125,12 @@ class AdCleanerActivity : ComponentActivity() {
         fun requestRemove(app: SuspiciousApp) {
             confirmRemove = false
             runCatching {
-                startActivity(Intent(Intent.ACTION_DELETE).apply {
-                    data = android.net.Uri.parse("package:${app.packageName}")
+                uninstallLauncher.launch(Intent(Intent.ACTION_DELETE).apply {
+                    data = Uri.parse("package:${app.packageName}")
                 })
             }.onFailure {
-                message = "Android không mở được màn hình gỡ ứng dụng cho ${app.label}."
+                message = "KHÔNG GỠ ĐƯỢC: ${app.label}. Không mở được trình gỡ ứng dụng của Android: ${it.message ?: "lỗi không xác định"}."
+                selected = null
             }
         }
 
@@ -113,8 +139,8 @@ class AdCleanerActivity : ComponentActivity() {
             AlertDialog(
                 onDismissRequest = { confirmRemove = false },
                 title = { Text("XÁC NHẬN GỠ ỨNG DỤNG") },
-                text = { Text("Ứng dụng ${app.label} có mức nghi vấn ${app.score}/10. Apple Seed sẽ mở màn hình gỡ ứng dụng của Android để bạn xác nhận.") },
-                confirmButton = { Button(onClick = { requestRemove(app) }) { Text("GỠ ỨNG DỤNG") } },
+                text = { Text("${app.label}\n\nMức nghi vấn: ${app.score}/10\n\nApple Seed chỉ mở trình gỡ chính thức của Android. Android sẽ quyết định thao tác có được phép hay không.") },
+                confirmButton = { Button(onClick = { requestRemove(app) }) { Text("XÁC NHẬN GỠ") } },
                 dismissButton = { OutlinedButton(onClick = { confirmRemove = false }) { Text("HỦY") } }
             )
         }
@@ -122,37 +148,39 @@ class AdCleanerActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme(primary = CleanerCyan, background = CleanerBg, surface = CleanerPanel, onSurface = CleanerText, error = CleanerDanger)) {
             Column(Modifier.fillMaxSize().background(CleanerBg).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("APPLE SEED • DỌN QUẢNG CÁO", color = CleanerText, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                Text("Chạy trực tiếp trên điện thoại — KHÔNG CẦN Wireless ADB.", color = CleanerCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("Chỉ hiển thị ứng dụng bên thứ ba. Ứng dụng hệ thống và ứng dụng hệ thống được cập nhật sẽ bị loại khỏi danh sách để tránh gỡ nhầm.", color = CleanerMuted, fontSize = 11.sp)
-                Button(onClick = { scan() }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (scanning) "ĐANG QUÉT..." else "🛡 QUÉT ỨNG DỤNG GÂY QUẢNG CÁO")
+                Text("🛡 QUÉT APP ĐỘC LẬP • KHÔNG CẦN WIRELESS ADB", color = CleanerCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Chỉ quét app bên thứ ba. App hệ thống và app hệ thống được cập nhật bị loại ở tầng lọc, không xuất hiện nút GỠ.", color = CleanerMuted, fontSize = 11.sp)
+
+                Button(onClick = { startActivity(Intent(this@AdCleanerActivity, VirusScannerActivity::class.java)) }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
+                    Text("🦠 QUÉT VIRUS FILE — CHỨC NĂNG RIÊNG")
                 }
+                OutlinedButton(onClick = { scan() }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (scanning) "ĐANG QUÉT QUẢNG CÁO..." else "🛡 QUÉT ỨNG DỤNG GÂY QUẢNG CÁO")
+                }
+
                 Card(colors = CardDefaults.cardColors(containerColor = CleanerPanel), modifier = Modifier.fillMaxWidth()) {
-                    Text(message, color = if (apps.isNotEmpty()) CleanerWarn else CleanerGood, modifier = Modifier.padding(14.dp))
+                    Text(message, color = if (message.startsWith("KHÔNG")) CleanerDanger else if (apps.isNotEmpty()) CleanerWarn else CleanerGood, modifier = Modifier.padding(14.dp), fontSize = 11.sp)
                 }
+
                 apps.forEach { app ->
-                    Card(colors = CardDefaults.cardColors(containerColor = CleanerPanel), modifier = Modifier.fillMaxWidth()) {
+                    Card(colors = CardDefaults.cardColors(containerColor = CleanerPanel), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Image(bitmap = app.icon.asImageBitmap(), contentDescription = app.label, modifier = Modifier.size(56.dp))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Image(bitmap = app.icon.asImageBitmap(), contentDescription = app.label, modifier = Modifier.size(58.dp))
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(app.label, color = CleanerText, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 Text(app.packageName, color = CleanerMuted, fontSize = 10.sp)
                                 Text("Mức nghi vấn: ${app.score}/10", color = if (app.score >= 7) CleanerDanger else CleanerWarn, fontWeight = FontWeight.Bold)
-                                Text(app.reasons.joinToString(" • "), color = CleanerMuted, fontSize = 11.sp)
+                                Text(app.reasons.joinToString(" • "), color = CleanerMuted, fontSize = 10.sp)
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = android.net.Uri.parse("package:${app.packageName}") }) }, modifier = Modifier.weight(1f)) {
-                                        Text("XEM APP")
-                                    }
-                                    Button(onClick = { selected = app; confirmRemove = true }, modifier = Modifier.weight(1f)) {
-                                        Text("GỠ")
-                                    }
+                                    OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:${app.packageName}") }) }, modifier = Modifier.weight(1f)) { Text("XEM APP") }
+                                    Button(onClick = { selected = app; confirmRemove = true }, modifier = Modifier.weight(1f)) { Text("GỠ") }
                                 }
                             }
                         }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("AN TOÀN: Apple Seed chỉ đưa app bên thứ ba vào danh sách nghi vấn. App hệ thống không được đưa vào kết quả và không có nút gỡ trong màn hình này.", color = CleanerMuted, fontSize = 10.sp)
+                Text("AN TOÀN: Apple Seed không bao giờ đưa app có FLAG_SYSTEM hoặc FLAG_UPDATED_SYSTEM_APP vào danh sách. Kết quả là phân tích nguy cơ, không phải kết luận malware tuyệt đối.", color = CleanerMuted, fontSize = 10.sp)
             }
         }
     }
@@ -172,7 +200,7 @@ class AdCleanerActivity : ComponentActivity() {
                     (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0 &&
                     app.packageName != packageName
             }
-            .mapNotNull { app -> analyzeApp(app) }
+            .mapNotNull { analyzeApp(it) }
             .sortedByDescending { it.score }
             .toList()
     }
@@ -188,10 +216,7 @@ class AdCleanerActivity : ComponentActivity() {
         var score = 0
         val reasons = mutableListOf<String>()
         fun flag(permission: String, points: Int, reason: String) {
-            if (permissions.contains(permission)) {
-                score += points
-                reasons += reason
-            }
+            if (permissions.contains(permission)) { score += points; reasons += reason }
         }
 
         flag("android.permission.SYSTEM_ALERT_WINDOW", 3, "HIỂN THỊ ĐÈ LÊN ỨNG DỤNG")
@@ -206,48 +231,24 @@ class AdCleanerActivity : ComponentActivity() {
         flag("android.permission.CAMERA", 1, "CAMERA")
 
         val installer = runCatching { pm.getInstallSourceInfo(packageName).installingPackageName }.getOrNull()
-        if (installer == null || installer == "com.android.packageinstaller") {
-            score += 1
-            reasons += "NGUỒN CÀI ĐẶT KHÔNG RÕ"
-        }
+        if (installer == null || installer == "com.android.packageinstaller") { score += 1; reasons += "NGUỒN CÀI ĐẶT KHÔNG RÕ" }
 
         val apkPath = app.sourceDir.orEmpty()
-        if (apkPath.contains("/data/local/tmp", ignoreCase = true)) {
-            score += 2
-            reasons += "APK TỪ VÙNG TẠM"
-        }
+        if (apkPath.contains("/data/local/tmp", ignoreCase = true)) { score += 2; reasons += "APK TỪ VÙNG TẠM" }
 
         val suspiciousName = listOf("adware", "reward", "cleaner", "update", "security", "virus", "booster").any {
             label.contains(it, ignoreCase = true) || packageName.contains(it, ignoreCase = true)
         }
-        if (suspiciousName && score > 0) {
-            score += 1
-            reasons += "TÊN ỨNG DỤNG ĐÁNG NGỜ"
-        }
+        if (suspiciousName && score > 0) { score += 1; reasons += "TÊN ỨNG DỤNG ĐÁNG NGỜ" }
 
-        return if (score >= 3) {
-            SuspiciousApp(
-                packageName = packageName,
-                label = label,
-                score = score.coerceAtMost(10),
-                reasons = reasons.distinct(),
-                icon = loadAppIcon(app)
-            )
-        } else null
+        return if (score >= 3) SuspiciousApp(packageName, label, score.coerceAtMost(10), reasons.distinct(), loadAppIcon(app)) else null
     }
 
-    private fun loadAppIcon(app: ApplicationInfo): Bitmap {
-        val drawable = runCatching { pm.getApplicationIcon(app) }.getOrNull()
-            ?: pm.defaultActivityIcon
-        return drawableToBitmap(drawable)
-    }
+    private fun loadAppIcon(app: ApplicationInfo): Bitmap = drawableToBitmap(runCatching { pm.getApplicationIcon(app) }.getOrNull() ?: pm.defaultActivityIcon)
 
     private fun drawableToBitmap(drawable: Drawable): Bitmap {
-        val size = 128
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(canvas)
+        val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).also { canvas -> drawable.setBounds(0, 0, 128, 128); drawable.draw(canvas) }
         return bitmap
     }
 }
