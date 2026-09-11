@@ -1,9 +1,9 @@
 package vn.appleseed.ims
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val VirusBg = Color(0xFF05070A)
 private val VirusPanel = Color(0xFF0D1218)
@@ -50,15 +53,26 @@ private data class ScanState(
     val currentPath: String,
     val files: Long,
     val folders: Long,
+    val skipped: Long,
+    val errors: Long,
     val infected: Int,
-    val deleted: Int,
     val result: String
 )
 
+private data class ScanStats(
+    var files: Long = 0L,
+    var folders: Long = 0L,
+    var skipped: Long = 0L,
+    var errors: Long = 0L,
+    var infected: Int = 0
+)
+
 class VirusScannerActivity : ComponentActivity() {
-    private var scanStarted = false
+    @Volatile private var scanStarted = false
+    private val cancelScan = AtomicBoolean(false)
+
     private var state by mutableStateOf(
-        ScanState(false, "Chưa bắt đầu.", 0, 0, 0, 0, "Sẵn sàng quét toàn bộ tệp dùng chung trên điện thoại.")
+        ScanState(false, "Chưa bắt đầu.", 0L, 0L, 0L, 0L, 0, "Sẵn sàng quét các tệp có khả năng thực thi hoặc chứa dấu hiệu độc hại.")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,154 +80,203 @@ class VirusScannerActivity : ComponentActivity() {
         setContent { VirusScannerScreen() }
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (Environment.isExternalStorageManager() && !scanStarted) startScan()
+    override fun onDestroy() {
+        cancelScan.set(true)
+        super.onDestroy()
     }
 
     @Composable
     private fun VirusScannerScreen() {
-        LaunchedEffect(Unit) {
-            if (Environment.isExternalStorageManager() && !scanStarted) startScan()
+        val hasAccess = Environment.isExternalStorageManager()
+        LaunchedEffect(hasAccess) {
+            if (hasAccess && !scanStarted) startScan()
         }
 
-        val hasAccess = Environment.isExternalStorageManager()
         MaterialTheme(colorScheme = darkColorScheme(primary = VirusCyan, background = VirusBg, surface = VirusPanel, onSurface = VirusText, error = VirusDanger)) {
-            Column(Modifier.fillMaxSize().background(VirusBg).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.fillMaxSize().background(VirusBg).verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text("APPLE SEED • QUÉT VIRUS", color = VirusText, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                Text("🦠 TỰ ĐỘNG DÒ TỆP • KHÔNG CẦN WIRELESS ADB", color = VirusCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("🦠 FILE SECURITY SCANNER • KHÔNG CẦN WIRELESS ADB", color = VirusCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
 
                 if (!hasAccess) {
                     Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("CẦN QUYỀN TRUY CẬP TẤT CẢ TỆP", color = VirusWarn, fontWeight = FontWeight.Black)
-                            Text("Để antivirus tự dò tệp trên bộ nhớ dùng chung, Android yêu cầu quyền 'Cho phép quản lý tất cả tệp'.", color = VirusMuted, fontSize = 11.sp)
-                            Button(onClick = { startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply { data = android.net.Uri.parse("package:$packageName") }) }, modifier = Modifier.fillMaxWidth()) {
-                                Text("CẤP QUYỀN → QUÉT TỰ ĐỘNG")
-                            }
+                            Text("Android yêu cầu quyền 'Cho phép quản lý tất cả tệp' để Apple Seed kiểm tra bộ nhớ dùng chung.", color = VirusMuted, fontSize = 11.sp)
+                            Button(onClick = {
+                                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = Uri.parse("package:$packageName")
+                                })
+                            }, modifier = Modifier.fillMaxWidth()) { Text("CẤP QUYỀN → QUÉT TỰ ĐỘNG") }
                         }
                     }
                 }
 
                 Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text(if (state.running) "🔎 ĐANG DÒ TỆP..." else "KẾT QUẢ QUÉT", color = if (state.running) VirusCyan else resultColor(state.result), fontWeight = FontWeight.Black)
-                        Text(state.currentPath, color = VirusText, fontSize = 10.sp)
-                        Text("Tệp: ${state.files}   •   Thư mục: ${state.folders}", color = VirusMuted, fontSize = 10.sp)
-                        Text("Phát hiện: ${state.infected}   •   Đã xóa: ${state.deleted}", color = if (state.infected > 0) VirusDanger else VirusMuted, fontSize = 10.sp)
-                        Text(state.result, color = resultColor(state.result), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(if (state.running) "🔎 ĐANG QUÉT..." else "KẾT QUẢ QUÉT", color = if (state.running) VirusCyan else resultColor(state.result), fontWeight = FontWeight.Black)
+                        Text(state.currentPath, color = VirusText, fontSize = 9.sp, maxLines = 3)
+                        Text("Tệp đã kiểm tra: ${state.files}  •  Thư mục: ${state.folders}", color = VirusMuted, fontSize = 10.sp)
+                        Text("Bỏ qua: ${state.skipped}  •  Lỗi đọc: ${state.errors}", color = VirusMuted, fontSize = 10.sp)
+                        Text("Phát hiện: ${state.infected}", color = if (state.infected > 0) VirusDanger else VirusGood, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        Text(state.result, color = resultColor(state.result), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                Button(onClick = { startScan() }, enabled = hasAccess && !state.running, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (state.running) "ĐANG QUÉT..." else "🦠 QUÉT LẠI TOÀN BỘ TỆP")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { startScan(force = true) }, enabled = hasAccess && !state.running, modifier = Modifier.weight(1f)) {
+                        Text(if (state.running) "ĐANG QUÉT..." else "🦠 QUÉT LẠI")
+                    }
+                    OutlinedButton(onClick = { cancelScan.set(true) }, enabled = state.running, modifier = Modifier.weight(1f)) { Text("DỪNG QUÉT") }
                 }
                 OutlinedButton(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text("ĐÓNG") }
+
+                Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("CƠ CHẾ QUÉT", color = VirusCyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        Text("Quét độc lập các file thực thi/script/archive và file text nhỏ; tính SHA-256, kiểm tra chữ ký EICAR và danh sách hash đã biết. Không tự xóa file. Đây là bộ quét chữ ký cục bộ, không thay thế Play Protect/antivirus thương mại.", color = VirusMuted, fontSize = 9.sp)
+                    }
+                }
             }
         }
     }
 
     private fun resultColor(text: String): Color = when {
         text.startsWith("CÓ VIRUS") || text.startsWith("QUÉT THẤT BẠI") -> VirusDanger
-        text.startsWith("ĐANG") -> VirusCyan
+        text.startsWith("ĐANG") || text.startsWith("ĐÃ DỪNG") -> VirusCyan
         else -> VirusGood
     }
 
-    private fun startScan() {
-        if (state.running || !Environment.isExternalStorageManager()) return
+    private fun startScan(force: Boolean = false) {
+        if (!Environment.isExternalStorageManager()) return
+        if (scanStarted && !force) return
+        if (state.running) return
+
+        cancelScan.set(false)
         scanStarted = true
-        state = ScanState(true, "/storage/emulated/0", 0, 0, 0, 0, "ĐANG DÒ TỆP — bắt đầu quét...")
+        state = ScanState(true, "/storage/emulated/0", 0L, 0L, 0L, 0L, 0, "ĐANG KHỞI TẠO BỘ QUÉT...")
+
         Thread {
-            val stats = mutableListOf(0L, 0L, 0, 0)
+            val stats = ScanStats()
             var lastUi = 0L
             try {
-                val root = Environment.getExternalStorageDirectory()
-                scanDirectory(root) { path, files, folders, infected, deleted ->
-                    stats[0] = files
-                    stats[1] = folders
-                    stats[2] = infected
-                    stats[3] = deleted
-                    val now = SystemClock.elapsedRealtime()
-                    if (now - lastUi >= 150 || infected > 0) {
+                scanDirectory(Environment.getExternalStorageDirectory(), stats) { path, s ->
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastUi >= 150L || s.infected > 0 || cancelScan.get()) {
                         lastUi = now
                         runOnUiThread {
-                            state = ScanState(true, path, files, folders, infected, deleted, "ĐANG DÒ TỆP — đang kiểm tra file hiện tại...")
+                            state = ScanState(true, path, s.files, s.folders, s.skipped, s.errors, s.infected, "ĐANG QUÉT — đang kiểm tra file hiện tại...")
                         }
                     }
                 }
+
+                val stopped = cancelScan.get()
                 runOnUiThread {
-                    state = ScanState(false, "Hoàn tất: /storage/emulated/0", stats[0], stats[1], stats[2], stats[3], if (stats[2] == 0) {
-                        "KHÔNG PHÁT HIỆN VIRUS THEO BỘ CHỮ KÝ HIỆN CÓ."
-                    } else {
-                        "CÓ VIRUS — đã phát hiện ${stats[2]} tệp khớp chữ ký và đã xử lý ${stats[3]} tệp."
-                    })
+                    state = ScanState(
+                        false,
+                        if (stopped) "Đã dừng tại: ${state.currentPath}" else "Hoàn tất: /storage/emulated/0",
+                        stats.files,
+                        stats.folders,
+                        stats.skipped,
+                        stats.errors,
+                        stats.infected,
+                        when {
+                            stopped -> "ĐÃ DỪNG — kết quả là phần đã quét đến thời điểm dừng."
+                            stats.infected == 0 -> "KHÔNG PHÁT HIỆN MẪU KHỚP CHỮ KÝ HIỆN CÓ."
+                            else -> "CÓ VIRUS — phát hiện ${stats.infected} tệp khớp chữ ký."
+                        }
+                    )
                     scanStarted = false
                 }
             } catch (t: Throwable) {
                 runOnUiThread {
-                    state = ScanState(false, "Dừng tại: ${state.currentPath}", stats[0], stats[1], stats[2], stats[3], "QUÉT THẤT BẠI: ${t.message ?: "Không xác định được lỗi."}")
+                    state = ScanState(false, "Dừng tại: ${state.currentPath}", stats.files, stats.folders, stats.skipped, stats.errors, stats.infected, "QUÉT THẤT BẠI: ${t.message ?: "Lỗi không xác định."}")
                     scanStarted = false
                 }
             }
         }.start()
     }
 
-    private fun scanDirectory(root: File, onProgress: (String, Long, Long, Int, Int) -> Unit) {
-        var files = 0L
-        var folders = 0L
-        var infected = 0
-        var deleted = 0
+    private fun scanDirectory(root: File, stats: ScanStats, onProgress: (String, ScanStats) -> Unit) {
+        val pending = ArrayDeque<File>()
+        pending.addLast(root)
 
-        fun visit(dir: File) {
-            if (!dir.exists() || !dir.isDirectory) return
-            if (isBlockedDirectory(dir)) return
-            folders++
-            onProgress(dir.absolutePath, files, folders, infected, deleted)
-            val children = runCatching { dir.listFiles() }.getOrNull() ?: return
+        while (pending.isNotEmpty() && !cancelScan.get()) {
+            val dir = pending.removeLast()
+            if (!dir.exists() || !dir.isDirectory || isBlockedDirectory(dir)) continue
+            stats.folders++
+            onProgress(dir.absolutePath, stats)
+
+            val children = try { dir.listFiles() } catch (_: Throwable) { stats.errors++; null }
+            if (children == null) {
+                stats.errors++
+                continue
+            }
+
             for (child in children) {
-                if (child.isDirectory) {
-                    visit(child)
-                    continue
+                if (cancelScan.get()) break
+                try {
+                    if (child.isDirectory) {
+                        if (!isBlockedDirectory(child)) pending.addLast(child)
+                        continue
+                    }
+                    if (!child.isFile || !child.canRead()) {
+                        stats.errors++
+                        continue
+                    }
+                    if (!isSecurityCandidate(child)) {
+                        stats.skipped++
+                        continue
+                    }
+
+                    stats.files++
+                    val verdict = runCatching { inspectFile(child) }.getOrElse {
+                        stats.errors++
+                        null
+                    }
+                    if (verdict != null) stats.infected++
+                    onProgress(child.absolutePath, stats)
+                } catch (_: Throwable) {
+                    stats.errors++
                 }
-                if (!child.isFile || !child.canRead()) continue
-                files++
-                val verdict = inspectFile(child)
-                if (verdict != null) {
-                    infected++
-                    val removed = runCatching { child.delete() }.getOrDefault(false)
-                    if (removed) deleted++
-                }
-                onProgress(child.absolutePath, files, folders, infected, deleted)
             }
         }
-        visit(root)
+        onProgress(if (cancelScan.get()) root.absolutePath else "Hoàn tất", stats)
     }
 
     private fun isBlockedDirectory(file: File): Boolean {
-        val p = file.absolutePath.replace('\\', '/')
-        return p == "/storage/emulated/0/Android/data" ||
-            p.startsWith("/storage/emulated/0/Android/data/") ||
-            p == "/storage/emulated/0/Android/obb" ||
-            p.startsWith("/storage/emulated/0/Android/obb/")
+        val p = runCatching { file.canonicalPath.replace('\\', '/') }.getOrElse { file.absolutePath.replace('\\', '/') }
+        return p == "/storage/emulated/0/Android/data" || p.startsWith("/storage/emulated/0/Android/data/") ||
+            p == "/storage/emulated/0/Android/obb" || p.startsWith("/storage/emulated/0/Android/obb/")
+    }
+
+    private fun isSecurityCandidate(file: File): Boolean {
+        val name = file.name.lowercase()
+        val ext = name.substringAfterLast('.', "")
+        if (ext in SECURITY_EXTENSIONS) return true
+        if (name == "eicar.com" || name == "eicar.txt" || name.contains("eicar")) return true
+        return file.length() <= MAX_TEXT_SCAN_BYTES && ext in TEXT_EXTENSIONS
     }
 
     private fun inspectFile(file: File): String? {
         val digest = MessageDigest.getInstance("SHA-256")
-        val eicar = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*".toByteArray(Charsets.US_ASCII)
+        val eicar = "X5O!P%@AP[4\\PZX54(P^)7CC)7}\$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!\$H+H*".toByteArray(Charsets.US_ASCII)
         var eicarMatched = false
         val window = ByteArray(eicar.size)
         var windowSize = 0
+
         FileInputStream(file).use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
+            val buffer = ByteArray(BUFFER_SIZE)
+            while (!cancelScan.get()) {
                 val n = input.read(buffer)
                 if (n <= 0) break
                 digest.update(buffer, 0, n)
                 if (!eicarMatched) {
                     for (i in 0 until n) {
-                        if (windowSize < window.size) {
-                            window[windowSize++] = buffer[i]
-                        } else {
+                        if (windowSize < window.size) window[windowSize++] = buffer[i]
+                        else {
                             System.arraycopy(window, 1, window, 0, window.size - 1)
                             window[window.size - 1] = buffer[i]
                         }
@@ -225,6 +288,8 @@ class VirusScannerActivity : ComponentActivity() {
                 }
             }
         }
+
+        if (cancelScan.get()) return null
         val hash = digest.digest().joinToString("") { "%02x".format(it) }
         return when {
             hash in KNOWN_MALWARE_HASHES -> "KNOWN_SIGNATURE:$hash"
@@ -234,8 +299,10 @@ class VirusScannerActivity : ComponentActivity() {
     }
 
     companion object {
-        private val KNOWN_MALWARE_HASHES = setOf(
-            "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
-        )
+        private const val BUFFER_SIZE = 64 * 1024
+        private const val MAX_TEXT_SCAN_BYTES = 8L * 1024L * 1024L
+        private val SECURITY_EXTENSIONS = setOf("apk", "xapk", "apks", "apkm", "zip", "rar", "7z", "jar", "dex", "odex", "vdex", "so", "elf", "bin", "img", "iso", "exe", "dll", "msi", "bat", "cmd", "ps1", "sh", "bash", "zsh", "py", "js", "vbs", "wsf", "scr", "com")
+        private val TEXT_EXTENSIONS = setOf("txt", "log", "xml", "json", "html", "htm", "js", "sh", "bat", "cmd", "ps1")
+        private val KNOWN_MALWARE_HASHES = setOf("275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f")
     }
 }
