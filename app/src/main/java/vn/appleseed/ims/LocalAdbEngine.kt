@@ -193,7 +193,9 @@ object LocalAdbEngine {
         }
 
         listener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(type: String?) = Log.i(TAG, "mDNS START $type")
+            override fun onDiscoveryStarted(type: String?) {
+                Log.i(TAG, "mDNS START $type")
+            }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (finished.get()) return
@@ -217,14 +219,18 @@ object LocalAdbEngine {
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
-            override fun onDiscoveryStopped(type: String?) = Log.d(TAG, "mDNS STOP $type")
+            override fun onDiscoveryStopped(type: String?) {
+                Log.d(TAG, "mDNS STOP $type")
+            }
 
             override fun onStartDiscoveryFailed(type: String?, errorCode: Int) {
                 finish()
                 onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
             }
 
-            override fun onStopDiscoveryFailed(type: String?, errorCode: Int) = Unit
+            override fun onStopDiscoveryFailed(type: String?, errorCode: Int) {
+                // Nothing to do.
+            }
         }
 
         runCatching {
