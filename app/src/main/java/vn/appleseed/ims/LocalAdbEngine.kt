@@ -32,6 +32,7 @@ object LocalAdbEngine {
     private val pairingDiscoveryInFlight = AtomicBoolean(false)
     private val connectDiscoveryActive = AtomicBoolean(false)
     private val autoConnectActive = AtomicBoolean(false)
+    private val pairingInProgress = AtomicBoolean(false)
     private val configured = AtomicBoolean(false)
 
     fun init(context: Context) {
@@ -53,6 +54,7 @@ object LocalAdbEngine {
 
     fun status(): String = when {
         activeKadb != null -> "WIRELESS ADB ONLINE"
+        pairingInProgress.get() -> "PAIRING / CONNECTING..."
         connectPort != null -> "AUTO CONNECTING..."
         else -> "WIRELESS DEBUGGING OFFLINE"
     }
@@ -69,7 +71,7 @@ object LocalAdbEngine {
         if (!autoConnectActive.compareAndSet(false, true)) return
         Thread {
             while (autoConnectActive.get()) {
-                if (activeKadb == null && !connectDiscoveryActive.get()) {
+                if (activeKadb == null && !pairingInProgress.get() && !connectDiscoveryActive.get()) {
                     val saved = connectPort
                     if (saved != null) {
                         connect(saved) { ok, message ->
@@ -88,8 +90,10 @@ object LocalAdbEngine {
     }
 
     fun preparePairing() {
+        pairingInProgress.set(true)
         pairingDiscoveryActive.set(true)
         pairingPort = null
+        connectPort = null
         discoverPairingPort(
             onFound = { found ->
                 pairingPort = found
@@ -104,6 +108,7 @@ object LocalAdbEngine {
 
     fun stopPairingDiscovery() {
         pairingDiscoveryActive.set(false)
+        pairingInProgress.set(false)
     }
 
     fun discoverPairingPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
@@ -120,7 +125,9 @@ object LocalAdbEngine {
     }
 
     fun discoverConnectPort(onFound: (Int) -> Unit, onError: (String) -> Unit = {}) {
-        if (!connectDiscoveryActive.compareAndSet(false, true)) return
+        if (!connectDiscoveryActive.compareAndSet(false, true)) {
+            return onError("CONNECT discovery đang chạy")
+        }
         discover(CONNECT_SERVICE, onFound, { error ->
             connectDiscoveryActive.set(false)
             onError(error)
@@ -157,9 +164,7 @@ object LocalAdbEngine {
         }
 
         listener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(type: String?) {
-                Log.d(TAG, "mDNS discovery started: $type")
-            }
+            override fun onDiscoveryStarted(type: String?) { Log.d(TAG, "mDNS discovery started: $type") }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (finished.get()) return
@@ -179,31 +184,24 @@ object LocalAdbEngine {
                             onFound(info.port)
                         }
                     })
-                }.onFailure {
-                    Log.w(TAG, "mDNS resolve request failed: ${it.message}")
-                }
+                }.onFailure { Log.w(TAG, "mDNS resolve request failed: ${it.message}") }
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
-            override fun onDiscoveryStopped(type: String?) {
-                Log.d(TAG, "mDNS discovery stopped: $type")
-            }
-
+            override fun onDiscoveryStopped(type: String?) { Log.d(TAG, "mDNS discovery stopped: $type") }
             override fun onStartDiscoveryFailed(type: String?, errorCode: Int) {
                 finish()
                 onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
             }
-
             override fun onStopDiscoveryFailed(type: String?, errorCode: Int) = Unit
         }
 
-        runCatching {
-            nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
-        }.onFailure {
-            finish()
-            onError("Không bắt đầu được mDNS: ${it.message}")
-            return
-        }
+        runCatching { nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener) }
+            .onFailure {
+                finish()
+                onError("Không bắt đầu được mDNS: ${it.message}")
+                return
+            }
 
         Thread {
             Thread.sleep(DISCOVERY_TIMEOUT_MS)
@@ -217,27 +215,45 @@ object LocalAdbEngine {
     fun pair(code: String, onDone: (Boolean, String) -> Unit) {
         val cleanCode = code.trim()
         if (cleanCode.length != 6 || cleanCode.any { !it.isDigit() }) {
-            return onDone(false, "Mã Pair phải đủ 6 chữ số")
+            onDone(false, "Mã Pair phải đủ 6 chữ số")
+            return
         }
 
+        pairingInProgress.set(true)
         pairingDiscoveryActive.set(false)
         connectPort = null
         val cachedPort = pairingPort
+        var finished = false
+
+        fun finishPair(ok: Boolean, message: String) {
+            if (finished) return
+            finished = true
+            pairingInProgress.set(false)
+            pairingDiscoveryActive.set(false)
+            onDone(ok, message)
+        }
 
         fun waitForConnect(attempt: Int = 0) {
             if (attempt >= 12) {
-                onDone(false, "PAIR OK nhưng chưa tìm thấy cổng CONNECT. Hãy giữ Wireless debugging ON rồi thử lại.")
+                finishPair(false, "PAIR thành công nhưng chưa tìm thấy kết nối Wireless Debugging. Hãy giữ Wireless Debugging bật rồi thử lại.")
                 return
             }
             Thread {
                 Thread.sleep(700)
                 discoverConnectPort(
-                    onFound = { found -> connect(found, onDone) },
+                    onFound = { found ->
+                        connect(found) { ok, message ->
+                            if (ok) finishPair(true, message)
+                            else {
+                                Log.d(TAG, "CONNECT endpoint $found failed: $message")
+                                connectPort = null
+                                waitForConnect(attempt + 1)
+                            }
+                        }
+                    },
                     onError = {
-                        Thread {
-                            Thread.sleep(500)
-                            waitForConnect(attempt + 1)
-                        }.start()
+                        Thread.sleep(250)
+                        waitForConnect(attempt + 1)
                     }
                 )
             }.start()
@@ -257,19 +273,20 @@ object LocalAdbEngine {
                         pairingPort = null
                         pairingDiscoveryActive.set(true)
                         if (pairingDiscoveryInFlight.compareAndSet(false, true)) {
-                            discover(PAIRING_SERVICE,
+                            discover(
+                                PAIRING_SERVICE,
                                 onFound = { fresh -> doPair(fresh, false) },
-                                onError = { message -> onDone(false, "PAIR FAILED: ${error.message ?: message}") },
+                                onError = { message -> finishPair(false, "PAIR thất bại: ${error.message ?: message}") },
                                 save = { info ->
                                     pairingPort = info.port
                                     Log.i(TAG, "Rediscovered pairing service: ${info.port}")
                                 }
                             )
                         } else {
-                            onDone(false, "PAIR FAILED: ${error.message ?: error.javaClass.simpleName}")
+                            finishPair(false, "PAIR thất bại: ${error.message ?: error.javaClass.simpleName}")
                         }
                     } else {
-                        onDone(false, "PAIR FAILED: ${error.message ?: error.javaClass.simpleName}")
+                        finishPair(false, "PAIR thất bại: ${error.message ?: error.javaClass.simpleName}")
                     }
                 }
             }.start()
@@ -281,7 +298,7 @@ object LocalAdbEngine {
                 return
             }
             if (attempt >= 12) {
-                onDone(false, "Không tìm thấy cổng PAIRING. Hãy mở Pair device with pairing code rồi thử lại.")
+                finishPair(false, "Không tìm thấy Wireless Debugging. Hãy mở Pair device with pairing code rồi thử lại.")
                 return
             }
             Thread {
@@ -299,9 +316,10 @@ object LocalAdbEngine {
             if (!pairingDiscoveryInFlight.compareAndSet(false, true)) {
                 waitForPairingPort()
             } else {
-                discover(PAIRING_SERVICE,
+                discover(
+                    PAIRING_SERVICE,
                     onFound = { found -> doPair(found, true) },
-                    onError = { error -> onDone(false, error) },
+                    onError = { error -> finishPair(false, error) },
                     save = { info ->
                         pairingPort = info.port
                         Log.i(TAG, "Resolved pairing service: name=${info.serviceName}, host=${info.host}, port=${info.port}")
@@ -312,12 +330,21 @@ object LocalAdbEngine {
     }
 
     fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
-        if (activeKadb != null) return onDone(true, "WIRELESS ADB ONLINE")
-        val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
-        val target = port ?: return discoverConnectPort(
-            onFound = { found -> connect(found, onDone) },
-            onError = { error -> onDone(false, error) }
-        )
+        if (activeKadb != null) {
+            onDone(true, "WIRELESS ADB ONLINE")
+            return
+        }
+        val ctx = appContext ?: run {
+            onDone(false, "ADB engine chưa khởi tạo")
+            return
+        }
+        val target = port ?: run {
+            discoverConnectPort(
+                onFound = { found -> connect(found, onDone) },
+                onError = { error -> onDone(false, error) }
+            )
+            return
+        }
         Thread {
             runCatching {
                 Log.i(TAG, "CONNECT start: $LOOPBACK:$target")
@@ -326,14 +353,13 @@ object LocalAdbEngine {
                 val probe = activeKadb?.shell("echo APPLE_SEED_ADB_OK")
                 check(probe?.exitCode == 0 && probe.output.contains("APPLE_SEED_ADB_OK")) { "ADB shell probe thất bại" }
                 connectPort = target
-                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                    .putInt("connect_port", target)
-                    .apply()
+                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("connect_port", target).apply()
                 onDone(true, "WIRELESS ADB ONLINE")
             }.onFailure {
-                Log.e(TAG, "CONNECT failed", it)
+                Log.e(TAG, "CONNECT failed on $target", it)
                 activeKadb?.close()
                 activeKadb = null
+                if (connectPort == target) connectPort = null
                 onDone(false, "ADB CONNECT FAILED: ${it.message ?: it.javaClass.simpleName}")
             }
         }.start()
