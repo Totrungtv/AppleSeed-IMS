@@ -15,7 +15,6 @@ import com.flyfishxu.kadb.cert.KadbCertPolicy
 import com.flyfishxu.kadb.cert.OkioFilePrivateKeyStore
 import kotlinx.coroutines.runBlocking
 import okio.Path.Companion.toPath
-import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -44,9 +43,6 @@ object LocalAdbEngine {
         val ctx = context.applicationContext
         appContext = ctx
         if (!configured.compareAndSet(false, true)) return
-
-        runCatching { HiddenApiBypass.addHiddenApiExemptions("L") }
-            .onFailure { Log.w(TAG, "HiddenApiBypass unavailable: ${it.message}") }
 
         runCatching {
             val keyFile = File(ctx.filesDir, "apple_seed_kadb_private_key.pem")
@@ -101,13 +97,13 @@ object LocalAdbEngine {
                         }
                     }
                     Thread.sleep(AUTO_CONNECT_RETRY_MS)
-                } catch (_: InterruptedException) { break }
+                } catch (_: InterruptedException) {
+                    break
+                }
             }
         }.start()
     }
 
-    // Start pairing discovery BEFORE the user submits the 6-digit code.
-    // Wireless Debugging advertises the pairing service only while its pairing UI is active.
     fun preparePairing() {
         pairingInProgress.set(true)
         pairingPort = null
@@ -207,6 +203,7 @@ object LocalAdbEngine {
                         override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
                             Log.w(TAG, "mDNS RESOLVE FAIL $serviceType code=$errorCode")
                         }
+
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             if (finished.get()) return
                             Log.i(TAG, "mDNS RESOLVED $serviceType ${info.host}:${info.port}")
@@ -219,6 +216,7 @@ object LocalAdbEngine {
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
+
             override fun onDiscoveryStopped(type: String?) {
                 Log.d(TAG, "mDNS STOP $type")
             }
@@ -228,9 +226,7 @@ object LocalAdbEngine {
                 onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
             }
 
-            override fun onStopDiscoveryFailed(type: String?, errorCode: Int) {
-                // Nothing to do.
-            }
+            override fun onStopDiscoveryFailed(type: String?, errorCode: Int) = Unit
         }
 
         runCatching {
@@ -253,7 +249,11 @@ object LocalAdbEngine {
         }
 
         Thread {
-            try { Thread.sleep(DISCOVERY_TIMEOUT_MS) } catch (_: InterruptedException) { return@Thread }
+            try {
+                Thread.sleep(DISCOVERY_TIMEOUT_MS)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
             if (!finished.get()) {
                 finish()
                 onError("Không tìm thấy $serviceType trong ${DISCOVERY_TIMEOUT_MS / 1000}s")
@@ -283,7 +283,11 @@ object LocalAdbEngine {
         Thread {
             val deadline = System.currentTimeMillis() + PAIR_PORT_WAIT_MS
             while (pairingInProgress.get() && pairingPort == null && System.currentTimeMillis() < deadline) {
-                try { Thread.sleep(250) } catch (_: InterruptedException) { return@Thread }
+                try {
+                    Thread.sleep(250)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
             }
             if (!pairingInProgress.get() || finished) return@Thread
             val port = pairingPort
@@ -316,12 +320,17 @@ object LocalAdbEngine {
             return
         }
         Thread {
-            try { Thread.sleep(700) } catch (_: InterruptedException) { return@Thread }
+            try {
+                Thread.sleep(700)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
             discoverConnectPort(
                 onFound = { found ->
                     connect(found) { ok, message ->
-                        if (ok) finishPair(true, message)
-                        else {
+                        if (ok) {
+                            finishPair(true, message)
+                        } else {
                             Log.w(TAG, "CONNECT endpoint $found failed: $message")
                             connectPort = null
                             waitForConnect(finishPair, attempt + 1)
@@ -374,7 +383,9 @@ object LocalAdbEngine {
                     discoverConnectPort({ found -> connect(found, onDone) }, { onDone(false, it) })
                 }
             }
-        } else discoverConnectPort({ found -> connect(found, onDone) }, { onDone(false, it) })
+        } else {
+            discoverConnectPort({ found -> connect(found, onDone) }, { onDone(false, it) })
+        }
     }
 
     fun shell(command: String): String {
@@ -391,21 +402,18 @@ object LocalAdbEngine {
         }
     }
 
+    /**
+     * The old instrumentation broker was removed from the security-clean build.
+     * Keep this API so the existing IMS UI remains source-compatible, but do not
+     * attempt to start an instrumentation component or use hidden Android APIs.
+     */
     fun runBroker(mode: String, subId: Int = -1, patch: String = "", onDone: (Boolean, String) -> Unit) {
-        val adb = activeKadb ?: return onDone(false, "WIRELESS ADB OFFLINE")
-        Thread {
-            runCatching {
-                val safePatch = patch.replace("'", "")
-                val cmd = "am instrument -w -e mode $mode -e subId $subId -e patch '$safePatch' vn.appleseed.ims/vn.appleseed.ims.BrokerInstrumentation"
-                val result = adb.shell(cmd)
-                val evidence = result.output.lineSequence()
-                    .firstOrNull { it.startsWith("INSTRUMENTATION_STATUS: evidence_b64=") }
-                    ?.substringAfter("evidence_b64=")
-                    ?.let { android.util.Base64.decode(it.trim(), android.util.Base64.DEFAULT).toString(Charsets.UTF_8) }
-                if (result.exitCode == 0 && evidence != null) onDone(true, evidence)
-                else onDone(false, "BROKER EXIT ${result.exitCode}: ${result.output.trim()}")
-            }.onFailure { onDone(false, "BROKER ERROR: ${it.message ?: it.javaClass.simpleName}") }
-        }.start()
+        if (activeKadb == null) {
+            onDone(false, "WIRELESS ADB OFFLINE")
+            return
+        }
+        Log.w(TAG, "IMS broker disabled: mode=$mode subId=$subId patchLength=${patch.length}")
+        onDone(false, "IMS BROKER ĐÃ TẮT TRONG BẢN SECURITY-CLEAN. Wireless ADB vẫn hoạt động bình thường.")
     }
 
     fun close() {
