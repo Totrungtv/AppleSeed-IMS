@@ -98,7 +98,7 @@ class VirusScannerActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text("APPLE SEED • QUÉT VIRUS", color = VirusText, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                Text("🦠 PROFESSIONAL FILE SCANNER • KHÔNG CẦN WIRELESS ADB", color = VirusCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("🦠 FILE SECURITY SCANNER • KHÔNG CẦN WIRELESS ADB", color = VirusCyan, fontSize = 10.sp, fontWeight = FontWeight.Bold)
 
                 if (!hasAccess) {
                     Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
@@ -116,42 +116,27 @@ class VirusScannerActivity : ComponentActivity() {
 
                 Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text(
-                            if (state.running) "🔎 ĐANG QUÉT..." else "KẾT QUẢ QUÉT",
-                            color = if (state.running) VirusCyan else resultColor(state.result),
-                            fontWeight = FontWeight.Black
-                        )
+                        Text(if (state.running) "🔎 ĐANG QUÉT..." else "KẾT QUẢ QUÉT", color = if (state.running) VirusCyan else resultColor(state.result), fontWeight = FontWeight.Black)
                         Text(state.currentPath, color = VirusText, fontSize = 9.sp, maxLines = 3)
                         Text("Tệp đã kiểm tra: ${state.files}  •  Thư mục: ${state.folders}", color = VirusMuted, fontSize = 10.sp)
-                        Text("Bỏ qua media: ${state.skipped}  •  Lỗi đọc: ${state.errors}", color = VirusMuted, fontSize = 10.sp)
+                        Text("Bỏ qua: ${state.skipped}  •  Lỗi đọc: ${state.errors}", color = VirusMuted, fontSize = 10.sp)
                         Text("Phát hiện: ${state.infected}", color = if (state.infected > 0) VirusDanger else VirusGood, fontSize = 11.sp, fontWeight = FontWeight.Black)
                         Text(state.result, color = resultColor(state.result), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = { startScan(force = true) },
-                        enabled = hasAccess && !state.running,
-                        modifier = Modifier.weight(1f)
-                    ) { Text(if (state.running) "ĐANG QUÉT..." else "🦠 QUÉT LẠI") }
-                    OutlinedButton(
-                        onClick = { cancelScan.set(true) },
-                        enabled = state.running,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("DỪNG QUÉT") }
+                    Button(onClick = { startScan(force = true) }, enabled = hasAccess && !state.running, modifier = Modifier.weight(1f)) {
+                        Text(if (state.running) "ĐANG QUÉT..." else "🦠 QUÉT LẠI")
+                    }
+                    OutlinedButton(onClick = { cancelScan.set(true) }, enabled = state.running, modifier = Modifier.weight(1f)) { Text("DỪNG QUÉT") }
                 }
-
                 OutlinedButton(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text("ĐÓNG") }
 
                 Card(colors = CardDefaults.cardColors(containerColor = VirusPanel), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("CƠ CHẾ QUÉT", color = VirusCyan, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                        Text(
-                            "Apple Seed không đọc toàn bộ ảnh/video như antivirus. Bộ quét ưu tiên APK, XAPK, APKS, DEX, JAR, SO, EXE, DLL, MSI và các script/archive; đồng thời kiểm tra SHA-256 và EICAR. File media lớn được bỏ qua để tránh tình trạng đứng ở một file hàng trăm MB.",
-                            color = VirusMuted,
-                            fontSize = 9.sp
-                        )
+                        Text("Quét độc lập các file thực thi/script/archive và file text nhỏ; tính SHA-256, kiểm tra chữ ký EICAR và danh sách hash đã biết. Không tự xóa file. Đây là bộ quét chữ ký cục bộ, không thay thế Play Protect/antivirus thương mại.", color = VirusMuted, fontSize = 9.sp)
                     }
                 }
             }
@@ -177,9 +162,9 @@ class VirusScannerActivity : ComponentActivity() {
             val stats = ScanStats()
             var lastUi = 0L
             try {
-                scanDirectory(Environment.getExternalStorageDirectory()) { path, s ->
+                scanDirectory(Environment.getExternalStorageDirectory(), stats) { path, s ->
                     val now = android.os.SystemClock.elapsedRealtime()
-                    if (now - lastUi >= 150L || s.infected > stats.infected || cancelScan.get()) {
+                    if (now - lastUi >= 150L || s.infected > 0 || cancelScan.get()) {
                         lastUi = now
                         runOnUiThread {
                             state = ScanState(true, path, s.files, s.folders, s.skipped, s.errors, s.infected, "ĐANG QUÉT — đang kiểm tra file hiện tại...")
@@ -214,10 +199,9 @@ class VirusScannerActivity : ComponentActivity() {
         }.start()
     }
 
-    private fun scanDirectory(root: File, onProgress: (String, ScanStats) -> Unit) {
+    private fun scanDirectory(root: File, stats: ScanStats, onProgress: (String, ScanStats) -> Unit) {
         val pending = ArrayDeque<File>()
         pending.addLast(root)
-        val stats = ScanStats()
 
         while (pending.isNotEmpty() && !cancelScan.get()) {
             val dir = pending.removeLast()
@@ -225,13 +209,7 @@ class VirusScannerActivity : ComponentActivity() {
             stats.folders++
             onProgress(dir.absolutePath, stats)
 
-            val children = try {
-                dir.listFiles()
-            } catch (_: Throwable) {
-                stats.errors++
-                null
-            }
-
+            val children = try { dir.listFiles() } catch (_: Throwable) { stats.errors++; null }
             if (children == null) {
                 stats.errors++
                 continue
@@ -248,7 +226,6 @@ class VirusScannerActivity : ComponentActivity() {
                         stats.errors++
                         continue
                     }
-
                     if (!isSecurityCandidate(child)) {
                         stats.skipped++
                         continue
@@ -266,17 +243,13 @@ class VirusScannerActivity : ComponentActivity() {
                 }
             }
         }
-
-        // Copy final counters back to the object observed by the caller.
-        // The callback receives the same mutable stats instance.
         onProgress(if (cancelScan.get()) root.absolutePath else "Hoàn tất", stats)
     }
 
     private fun isBlockedDirectory(file: File): Boolean {
         val p = runCatching { file.canonicalPath.replace('\\', '/') }.getOrElse { file.absolutePath.replace('\\', '/') }
         return p == "/storage/emulated/0/Android/data" || p.startsWith("/storage/emulated/0/Android/data/") ||
-            p == "/storage/emulated/0/Android/obb" || p.startsWith("/storage/emulated/0/Android/obb/") ||
-            p == "/storage/emulated/0/Android/media" || p.startsWith("/storage/emulated/0/Android/media/")
+            p == "/storage/emulated/0/Android/obb" || p.startsWith("/storage/emulated/0/Android/obb/")
     }
 
     private fun isSecurityCandidate(file: File): Boolean {
@@ -284,7 +257,6 @@ class VirusScannerActivity : ComponentActivity() {
         val ext = name.substringAfterLast('.', "")
         if (ext in SECURITY_EXTENSIONS) return true
         if (name == "eicar.com" || name == "eicar.txt" || name.contains("eicar")) return true
-        // Small text-like files can contain a test signature; avoid hashing large media/documents.
         return file.length() <= MAX_TEXT_SCAN_BYTES && ext in TEXT_EXTENSIONS
     }
 
@@ -303,9 +275,8 @@ class VirusScannerActivity : ComponentActivity() {
                 digest.update(buffer, 0, n)
                 if (!eicarMatched) {
                     for (i in 0 until n) {
-                        if (windowSize < window.size) {
-                            window[windowSize++] = buffer[i]
-                        } else {
+                        if (windowSize < window.size) window[windowSize++] = buffer[i]
+                        else {
                             System.arraycopy(window, 1, window, 0, window.size - 1)
                             window[window.size - 1] = buffer[i]
                         }
@@ -330,14 +301,8 @@ class VirusScannerActivity : ComponentActivity() {
     companion object {
         private const val BUFFER_SIZE = 64 * 1024
         private const val MAX_TEXT_SCAN_BYTES = 8L * 1024L * 1024L
-        private val SECURITY_EXTENSIONS = setOf(
-            "apk", "xapk", "apks", "apkm", "zip", "rar", "7z", "jar", "dex", "odex", "vdex",
-            "so", "elf", "bin", "img", "iso", "exe", "dll", "msi", "bat", "cmd", "ps1", "sh",
-            "bash", "zsh", "py", "js", "vbs", "wsf", "scr", "com"
-        )
+        private val SECURITY_EXTENSIONS = setOf("apk", "xapk", "apks", "apkm", "zip", "rar", "7z", "jar", "dex", "odex", "vdex", "so", "elf", "bin", "img", "iso", "exe", "dll", "msi", "bat", "cmd", "ps1", "sh", "bash", "zsh", "py", "js", "vbs", "wsf", "scr", "com")
         private val TEXT_EXTENSIONS = setOf("txt", "log", "xml", "json", "html", "htm", "js", "sh", "bat", "cmd", "ps1")
-        private val KNOWN_MALWARE_HASHES = setOf(
-            "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
-        )
+        private val KNOWN_MALWARE_HASHES = setOf("275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f")
     }
 }
