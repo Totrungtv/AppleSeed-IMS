@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -71,12 +72,7 @@ private val CleanerGood = Color(0xFF42E6A4)
 private val CleanerWarn = Color(0xFFFFC857)
 private val CleanerDanger = Color(0xFFFF667A)
 
-private data class AdRiskApp(
-    val packageName: String,
-    val label: String,
-    val reasons: List<String>,
-    val icon: Bitmap
-)
+private data class AdRiskApp(val packageName: String, val label: String, val reasons: List<String>, val icon: Bitmap)
 
 class AdCleanerActivity : ComponentActivity() {
     private val pm by lazy { packageManager }
@@ -85,11 +81,8 @@ class AdCleanerActivity : ComponentActivity() {
     private var pendingPackage: String? = null
     private var pendingLabel: String? = null
 
-    private val uninstallLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val pkg = pendingPackage ?: return@registerForActivityResult
-        val label = pendingLabel ?: pkg
-        val returnedOk = result.resultCode == RESULT_OK
-        mainHandler.postDelayed({ verifyUninstall(pkg, label, returnedOk) }, 700L)
+    private val uninstallLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        verifyPendingUninstall()
     }
 
     private var uninstallMessage by mutableStateOf<String?>(null)
@@ -99,13 +92,20 @@ class AdCleanerActivity : ComponentActivity() {
         setContent { AdCleanerScreen() }
     }
 
-    private fun verifyUninstall(pkg: String, label: String, returnedOk: Boolean) {
-        val stillInstalled = runCatching { pm.getApplicationInfo(pkg, 0) }.isSuccess
-        uninstallMessage = when {
-            !stillInstalled -> "GỠ THÀNH CÔNG: $label. Ứng dụng đã được gỡ khỏi máy."
-            !returnedOk -> "ĐÃ HỦY / BỊ TỪ CHỐI: $label. Android chưa gỡ ứng dụng."
-            else -> "KHÔNG GỠ ĐƯỢC: $label. Android chưa hoàn tất việc gỡ ứng dụng."
+    override fun onResume() {
+        super.onResume()
+        if (pendingPackage != null) {
+            mainHandler.postDelayed({ verifyPendingUninstall() }, 500L)
         }
+    }
+
+    private fun verifyPendingUninstall() {
+        val pkg = pendingPackage ?: return
+        val label = pendingLabel ?: pkg
+        val stillInstalled = runCatching { pm.getApplicationInfo(pkg, 0) }.isSuccess
+        if (stillInstalled) return
+
+        uninstallMessage = "GỠ THÀNH CÔNG: $label. Ứng dụng đã được gỡ khỏi máy."
         pendingPackage = null
         pendingLabel = null
     }
@@ -130,17 +130,13 @@ class AdCleanerActivity : ComponentActivity() {
             if (scanning) return
             scanning = true
             apps.clear()
-            message = "ĐANG QUÉT → quyền OVERLAY → AppOps → dấu hiệu tự khởi động/cài APK..."
+            message = "ĐANG QUÉT → OVERLAY → AppOps → tự khởi động → cài APK..."
             Thread {
                 val result = runCatching { scanAdRiskApps() }.getOrElse { emptyList() }
                 runOnUiThread {
                     apps.addAll(result)
                     scanning = false
-                    message = if (result.isEmpty()) {
-                        "SẠCH: Không phát hiện app bên thứ ba vừa có SYSTEM_ALERT_WINDOW vừa được AppOps OVERLAY cho phép."
-                    } else {
-                        "CẢNH BÁO: Phát hiện ${result.size} app cần kiểm tra. Không tự động gỡ bất kỳ app nào."
-                    }
+                    message = if (result.isEmpty()) "KHÔNG PHÁT HIỆN APP BÊN THỨ BA CÓ OVERLAY ĐƯỢC CẤP PHÉP THEO BỘ LỌC HIỆN TẠI." else "CẢNH BÁO: ${result.size} APP CẦN KIỂM TRA."
                 }
             }.start()
         }
@@ -151,21 +147,14 @@ class AdCleanerActivity : ComponentActivity() {
             pendingLabel = app.label
             message = "ĐANG MỞ TRÌNH GỠ → ${app.label}..."
             runCatching {
-                uninstallLauncher.launch(Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
+                uninstallLauncher.launch(Intent(Intent.ACTION_DELETE).apply {
                     data = Uri.parse("package:${app.packageName}")
-                    putExtra(Intent.EXTRA_RETURN_RESULT, true)
                 })
             }.onFailure {
-                runCatching {
-                    uninstallLauncher.launch(Intent(Intent.ACTION_DELETE).apply {
-                        data = Uri.parse("package:${app.packageName}")
-                    })
-                }.onFailure {
-                    pendingPackage = null
-                    pendingLabel = null
-                    message = "KHÔNG MỞ ĐƯỢC TRÌNH GỠ: ${app.label}."
-                    selected = null
-                }
+                pendingPackage = null
+                pendingLabel = null
+                message = "KHÔNG MỞ ĐƯỢC TRÌNH GỠ: ${app.label}."
+                selected = null
             }
         }
 
@@ -182,7 +171,7 @@ class AdCleanerActivity : ComponentActivity() {
                         Text(app.label, color = CleanerText, fontWeight = FontWeight.Bold)
                         Text(app.packageName, color = CleanerMuted, fontSize = 10.sp)
                         Text(app.reasons.joinToString("\n"), color = CleanerWarn, fontSize = 11.sp)
-                        Text("Apple Seed gọi trình gỡ chuẩn của Android và sẽ xác minh lại package sau khi trình gỡ đóng.", color = CleanerText, fontSize = 11.sp)
+                        Text("Apple Seed gọi trình gỡ chuẩn của Android. Sau khi quay lại app, Apple Seed kiểm tra package thực tế còn tồn tại hay không.", color = CleanerText, fontSize = 11.sp)
                     }
                 },
                 confirmButton = { Button(onClick = { requestRemove(app) }, colors = ButtonDefaults.buttonColors(containerColor = CleanerDanger)) { Text("GỠ ỨNG DỤNG", fontWeight = FontWeight.Black) } },
@@ -195,17 +184,13 @@ class AdCleanerActivity : ComponentActivity() {
                 Box(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFF122033), CleanerBg))).padding(18.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(46.dp).clip(CircleShape).background(Brush.linearGradient(listOf(CleanerCyan, CleanerBlue))), contentAlignment = Alignment.Center) {
-                                Text("AS", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 16.sp)
-                            }
+                            Box(Modifier.size(46.dp).clip(CircleShape).background(Brush.linearGradient(listOf(CleanerCyan, CleanerBlue))), contentAlignment = Alignment.Center) { Text("AS", color = Color.Black, fontWeight = FontWeight.Black, fontSize = 16.sp) }
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("APPLE SEED", color = CleanerText, fontSize = 20.sp, fontWeight = FontWeight.Black)
                                 Text("VIP TECHNICIAN CONSOLE", color = CleanerCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                             }
-                            Box(Modifier.background(CleanerGood.copy(alpha = .12f), RoundedCornerShape(50.dp)).border(1.dp, CleanerGood.copy(alpha = .35f), RoundedCornerShape(50.dp)).padding(horizontal = 9.dp, vertical = 6.dp)) {
-                                Text("● READY", color = CleanerGood, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                            }
+                            Box(Modifier.background(CleanerGood.copy(alpha = .12f), RoundedCornerShape(50.dp)).border(1.dp, CleanerGood.copy(alpha = .35f), RoundedCornerShape(50.dp)).padding(horizontal = 9.dp, vertical = 6.dp)) { Text("● READY", color = CleanerGood, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
                         }
                         Spacer(Modifier.height(4.dp))
                         Text("AD CLEANER", color = CleanerText, fontSize = 26.sp, fontWeight = FontWeight.Black)
@@ -216,15 +201,11 @@ class AdCleanerActivity : ComponentActivity() {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Card(colors = CardDefaults.cardColors(containerColor = CleanerPanel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("QUÉT ĐỘC LẬP", color = CleanerCyan, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                            Text("Không cần Wireless ADB", color = CleanerText, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                            Text("Chỉ đánh dấu app bên thứ ba có SYSTEM_ALERT_WINDOW và AppOps OVERLAY = ALLOWED. Không tự động gỡ.", color = CleanerMuted, fontSize = 11.sp)
-                            Button(onClick = { scan() }, enabled = !scanning, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = CleanerCyan, contentColor = Color.Black)) {
-                                Text(if (scanning) "⟳  ĐANG QUÉT APP..." else "🛡  QUÉT APP GÂY QUẢNG CÁO", fontWeight = FontWeight.Black)
-                            }
-                            OutlinedButton(onClick = { startActivity(Intent(this@AdCleanerActivity, VirusScannerActivity::class.java)) }, enabled = !scanning, modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                                Text("🦠  QUÉT VIRUS FILE", fontWeight = FontWeight.Bold)
-                            }
+                            Text("QUÉT APP QUẢNG CÁO", color = CleanerCyan, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                            Text("LỌC APP BÊN THỨ BA", color = CleanerText, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                            Text("Chỉ đánh dấu app bên thứ ba có OVERLAY được cấp phép, sau đó cộng thêm tín hiệu tự khởi động hoặc cài APK. Không tự động gỡ.", color = CleanerMuted, fontSize = 11.sp)
+                            Button(onClick = { scan() }, enabled = !scanning, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = CleanerCyan, contentColor = Color.Black)) { Text(if (scanning) "⟳  ĐANG QUÉT APP..." else "🛡  QUÉT APP GÂY QUẢNG CÁO", fontWeight = FontWeight.Black) }
+                            OutlinedButton(onClick = { startActivity(Intent(this@AdCleanerActivity, VirusScannerActivity::class.java)) }, enabled = !scanning, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("🦠  QUÉT VIRUS FILE", fontWeight = FontWeight.Bold) }
                         }
                     }
 
@@ -238,12 +219,7 @@ class AdCleanerActivity : ComponentActivity() {
                     if (apps.isNotEmpty()) {
                         Text("APPS CẦN KIỂM TRA  •  ${apps.size}", color = CleanerText, fontSize = 13.sp, fontWeight = FontWeight.Black)
                         apps.forEach { app ->
-                            RiskAppCard(app, onDetails = {
-                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:${app.packageName}") })
-                            }, onRemove = {
-                                selected = app
-                                confirmRemove = true
-                            })
+                            RiskAppCard(app, onDetails = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:${app.packageName}") }) }, onRemove = { selected = app; confirmRemove = true })
                         }
                     } else if (!scanning) {
                         Card(colors = CardDefaults.cardColors(containerColor = CleanerPanel), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
@@ -256,7 +232,7 @@ class AdCleanerActivity : ComponentActivity() {
 
                     Divider(color = CleanerMuted.copy(alpha = .15f))
                     Text("BẢO VỆ HỆ THỐNG", color = CleanerCyan, fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                    Text("APP HỆ THỐNG, FLAG_SYSTEM và FLAG_UPDATED_SYSTEM_APP bị loại ngay từ tầng quét. Nút GỠ dùng trình uninstall chuẩn của Android; nếu máy là Device Owner hoặc app có chính sách quản trị, Android vẫn có thể chặn gỡ.", color = CleanerMuted, fontSize = 10.sp)
+                    Text("APP HỆ THỐNG, FLAG_SYSTEM và FLAG_UPDATED_SYSTEM_APP bị loại. Nút GỠ dùng trình uninstall chuẩn của Android. Device Owner hoặc chính sách quản trị vẫn có thể chặn gỡ.", color = CleanerMuted, fontSize = 10.sp)
                     Spacer(Modifier.height(12.dp))
                 }
             }
@@ -273,9 +249,7 @@ class AdCleanerActivity : ComponentActivity() {
                         Text(app.label, color = CleanerText, fontWeight = FontWeight.Black, fontSize = 15.sp)
                         Text(app.packageName, color = CleanerMuted, fontSize = 9.sp)
                     }
-                    Box(Modifier.background(CleanerWarn.copy(alpha = .12f), RoundedCornerShape(50.dp)).padding(horizontal = 8.dp, vertical = 5.dp)) {
-                        Text("REVIEW", color = CleanerWarn, fontSize = 8.sp, fontWeight = FontWeight.Black)
-                    }
+                    Box(Modifier.background(CleanerWarn.copy(alpha = .12f), RoundedCornerShape(50.dp)).padding(horizontal = 8.dp, vertical = 5.dp)) { Text("REVIEW", color = CleanerWarn, fontSize = 8.sp, fontWeight = FontWeight.Black) }
                 }
                 Text(app.reasons.joinToString("  •  "), color = CleanerWarn, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -312,9 +286,7 @@ class AdCleanerActivity : ComponentActivity() {
         }.getOrDefault(emptySet())
         if (!permissions.contains("android.permission.SYSTEM_ALERT_WINDOW")) return null
 
-        val overlayMode = runCatching {
-            appOps.checkOpNoThrow(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, app.uid, app.packageName)
-        }.getOrDefault(AppOpsManager.MODE_IGNORED)
+        val overlayMode = runCatching { appOps.checkOpNoThrow(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, app.uid, app.packageName) }.getOrDefault(AppOpsManager.MODE_IGNORED)
         if (overlayMode != AppOpsManager.MODE_ALLOWED) return null
 
         val reasons = mutableListOf("OVERLAY ĐANG ĐƯỢC CẤP PHÉP")
@@ -323,12 +295,7 @@ class AdCleanerActivity : ComponentActivity() {
         val installer = runCatching { pm.getInstallSourceInfo(app.packageName).installingPackageName }.getOrNull()
         if (installer == null) reasons += "NGUỒN CÀI ĐẶT KHÔNG RÕ"
 
-        return AdRiskApp(
-            packageName = app.packageName,
-            label = runCatching { pm.getApplicationLabel(app).toString() }.getOrDefault(app.packageName),
-            reasons = reasons,
-            icon = loadAppIcon(app)
-        )
+        return AdRiskApp(app.packageName, runCatching { pm.getApplicationLabel(app).toString() }.getOrDefault(app.packageName), reasons, loadAppIcon(app))
     }
 
     private fun loadAppIcon(app: ApplicationInfo): Bitmap = drawableToBitmap(runCatching { pm.getApplicationIcon(app) }.getOrNull() ?: pm.defaultActivityIcon)
