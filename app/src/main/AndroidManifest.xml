@@ -34,12 +34,7 @@
 
         <activity
             android:name=".AdCleanerActivity"
-            android:exported="true"
-            android:label="Apple Seed • Dọn quảng cáo">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:label="Apple Seed • Dọn quảng cáo" />
     </application>
 </manifest>
