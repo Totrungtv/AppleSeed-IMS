@@ -85,7 +85,11 @@ object LocalAdbEngine {
                             connectEndpoint(host, port) { ok, message -> if (!ok) Log.d(TAG, message) }
                         } else {
                             discoverConnectPort(
-                                { foundHost, foundPort -> connectEndpoint(foundHost, foundPort) },
+                                { foundHost, foundPort ->
+                                    connectEndpoint(foundHost, foundPort) { ok, message ->
+                                        if (!ok) Log.d(TAG, message)
+                                    }
+                                },
                                 { Log.d(TAG, it) }
                             )
                         }
