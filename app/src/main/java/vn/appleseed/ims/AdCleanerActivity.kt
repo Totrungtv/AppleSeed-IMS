@@ -75,16 +75,15 @@ class AdCleanerActivity : ComponentActivity() {
             Thread {
                 val command = """
                     pm list packages -3 | cut -d: -f2 | while read p; do
-                      d="$(dumpsys package "$p" 2>/dev/null)";
+                      d="${'$'}(" + "dumpsys package \"${'$'}p\" 2>/dev/null" + ")";
                       score=0; reasons="";
-                      echo "$d" | grep -q "android.permission.SYSTEM_ALERT_WINDOW" && { score=$((score+3)); reasons="$reasons|HIỂN THỊ TRÊN ỨNG DỤ"; };
-                      echo "$d" | grep -q "android.permission.RECEIVE_BOOT_COMPLETED" && { score=$((score+1)); reasons="$reasons|TỰ KHỞI ĐỘNG"; };
-                      echo "$d" | grep -q "android.permission.REQUEST_INSTALL_PACKAGES" && { score=$((score+2)); reasons="$reasons|CÓ QUYỀN CÀI APK"; };
-                      echo "$d" | grep -q "android.permission.PACKAGE_USAGE_STATS" && { score=$((score+1)); reasons="$reasons|THEO DÕI ỨNG DỤNG"; };
-                      if [ $score -ge 3 ]; then echo "AS|$score|$p|$reasons"; fi;
+                      echo "${'$'}d" | grep -q "android.permission.SYSTEM_ALERT_WINDOW" && { score=${'$'}((score+3)); reasons="${'$'}reasons|HIỂN THỊ TRÊN ỨNG DỤ"; };
+                      echo "${'$'}d" | grep -q "android.permission.RECEIVE_BOOT_COMPLETED" && { score=${'$'}((score+1)); reasons="${'$'}reasons|TỰ KHỞI ĐỘNG"; };
+                      echo "${'$'}d" | grep -q "android.permission.REQUEST_INSTALL_PACKAGES" && { score=${'$'}((score+2)); reasons="${'$'}reasons|CÓ QUYỀN CÀI APK"; };
+                      echo "${'$'}d" | grep -q "android.permission.PACKAGE_USAGE_STATS" && { score=${'$'}((score+1)); reasons="${'$'}reasons|THEO DÕI ỨNG DỤNG"; };
+                      if [ ${'$'}score -ge 3 ]; then echo "AS|${'$'}score|${'$'}p|${'$'}reasons"; fi;
                     done
                 """.trimIndent().replace("\n", " ")
-                    .replace("$", "${'$'}")
                 val result = LocalAdbEngine.shell(command)
                 val parsed = result.lineSequence().mapNotNull { line ->
                     if (!line.startsWith("AS|")) return@mapNotNull null
