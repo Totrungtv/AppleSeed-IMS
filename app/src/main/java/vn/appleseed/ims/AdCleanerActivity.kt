@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -68,10 +67,35 @@ private data class SuspiciousApp(
 
 class AdCleanerActivity : ComponentActivity() {
     private val pm by lazy { packageManager }
+    private var pendingUninstallPackage: String? = null
+    private var pendingUninstallLabel: String? = null
+    private var uninstallResult by mutableStateOf<String?>(null)
+
+    private val uninstallLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        checkUninstallResult()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { AdCleanerScreen() }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (pendingUninstallPackage != null) checkUninstallResult()
+    }
+
+    private fun checkUninstallResult() {
+        val packageName = pendingUninstallPackage ?: return
+        val label = pendingUninstallLabel ?: packageName
+        val stillInstalled = runCatching { pm.getApplicationInfo(packageName, 0) }.isSuccess
+        if (stillInstalled) {
+            uninstallResult = "KHÔNG GỠ ĐƯỢC: $label. Ứng dụng vẫn còn trên máy. Có thể bạn đã HỦY hoặc Android không cho phép gỡ ứng dụng này."
+        } else {
+            uninstallResult = "GỠ THÀNH CÔNG: $label. Android đã gỡ ứng dụng khỏi máy."
+        }
+        pendingUninstallPackage = null
+        pendingUninstallLabel = null
     }
 
     @Composable
@@ -82,23 +106,14 @@ class AdCleanerActivity : ComponentActivity() {
         var selected by remember { mutableStateOf<SuspiciousApp?>(null) }
         var confirmRemove by remember { mutableStateOf(false) }
 
-        val uninstallLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val app = selected
-            if (result.resultCode == RESULT_OK) {
-                if (app != null) {
-                    apps.removeAll { it.packageName == app.packageName }
-                    message = "GỠ THÀNH CÔNG: ${app.label}. Ứng dụng đã được Android xác nhận gỡ khỏi máy."
-                } else {
-                    message = "GỠ THÀNH CÔNG: Android đã xác nhận thao tác."
-                }
-            } else {
-                message = if (app != null) {
-                    "KHÔNG GỠ ĐƯỢC: ${app.label}. Người dùng đã hủy hoặc Android từ chối thao tác. Ứng dụng vẫn còn trên máy."
-                } else {
-                    "KHÔNG GỠ ĐƯỢC: Android không xác nhận thao tác."
-                }
+        androidx.compose.runtime.LaunchedEffect(uninstallResult) {
+            uninstallResult?.let { text ->
+                val success = text.startsWith("GỠ THÀNH CÔNG")
+                message = text
+                if (success) selected?.let { removed -> apps.removeAll { it.packageName == removed.packageName } }
+                selected = null
+                uninstallResult = null
             }
-            selected = null
         }
 
         fun scan() {
@@ -106,9 +121,7 @@ class AdCleanerActivity : ComponentActivity() {
             scanning = true
             message = "Đang quét ứng dụng bên thứ ba trực tiếp trên điện thoại..."
             Thread {
-                val result = runCatching { scanInstalledApps() }.getOrElse {
-                    emptyList()
-                }
+                val result = runCatching { scanInstalledApps() }.getOrElse { emptyList() }
                 runOnUiThread {
                     apps.clear()
                     apps.addAll(result)
@@ -124,12 +137,16 @@ class AdCleanerActivity : ComponentActivity() {
 
         fun requestRemove(app: SuspiciousApp) {
             confirmRemove = false
+            pendingUninstallPackage = app.packageName
+            pendingUninstallLabel = app.label
             runCatching {
                 uninstallLauncher.launch(Intent(Intent.ACTION_DELETE).apply {
                     data = Uri.parse("package:${app.packageName}")
                 })
             }.onFailure {
-                message = "KHÔNG GỠ ĐƯỢC: ${app.label}. Không mở được trình gỡ ứng dụng của Android: ${it.message ?: "lỗi không xác định"}."
+                pendingUninstallPackage = null
+                pendingUninstallLabel = null
+                message = "KHÔNG GỠ ĐƯỢC: ${app.label}. Android không mở được trình gỡ ứng dụng: ${it.message ?: "lỗi không xác định"}."
                 selected = null
             }
         }
@@ -139,7 +156,7 @@ class AdCleanerActivity : ComponentActivity() {
             AlertDialog(
                 onDismissRequest = { confirmRemove = false },
                 title = { Text("XÁC NHẬN GỠ ỨNG DỤNG") },
-                text = { Text("${app.label}\n\nMức nghi vấn: ${app.score}/10\n\nApple Seed chỉ mở trình gỡ chính thức của Android. Android sẽ quyết định thao tác có được phép hay không.") },
+                text = { Text("${app.label}\n\nMức nghi vấn: ${app.score}/10\n\nApple Seed sẽ mở trình gỡ chính thức của Android. Chỉ khi app thực sự biến khỏi danh sách cài đặt thì Apple Seed mới báo GỠ THÀNH CÔNG.") },
                 confirmButton = { Button(onClick = { requestRemove(app) }) { Text("XÁC NHẬN GỠ") } },
                 dismissButton = { OutlinedButton(onClick = { confirmRemove = false }) { Text("HỦY") } }
             )
@@ -152,7 +169,7 @@ class AdCleanerActivity : ComponentActivity() {
                 Text("Chỉ quét app bên thứ ba. App hệ thống và app hệ thống được cập nhật bị loại ở tầng lọc, không xuất hiện nút GỠ.", color = CleanerMuted, fontSize = 11.sp)
 
                 Button(onClick = { startActivity(Intent(this@AdCleanerActivity, VirusScannerActivity::class.java)) }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
-                    Text("🦠 QUÉT VIRUS FILE — CHỨC NĂNG RIÊNG")
+                    Text("🦠 QUÉT VIRUS TOÀN BỘ ỨNG DỤNG")
                 }
                 OutlinedButton(onClick = { scan() }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
                     Text(if (scanning) "ĐANG QUÉT QUẢNG CÁO..." else "🛡 QUÉT ỨNG DỤNG GÂY QUẢNG CÁO")
@@ -192,7 +209,6 @@ class AdCleanerActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             pm.getInstalledApplications(PackageManager.GET_META_DATA)
         }
-
         return installed.asSequence()
             .filter { app ->
                 val flags = app.flags
@@ -212,13 +228,11 @@ class AdCleanerActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             pm.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS).requestedPermissions?.toSet().orEmpty()
         }.getOrDefault(emptySet())
-
         var score = 0
         val reasons = mutableListOf<String>()
         fun flag(permission: String, points: Int, reason: String) {
             if (permissions.contains(permission)) { score += points; reasons += reason }
         }
-
         flag("android.permission.SYSTEM_ALERT_WINDOW", 3, "HIỂN THỊ ĐÈ LÊN ỨNG DỤNG")
         flag("android.permission.REQUEST_INSTALL_PACKAGES", 2, "CÓ QUYỀN CÀI APK")
         flag("android.permission.RECEIVE_BOOT_COMPLETED", 1, "TỰ KHỞI ĐỘNG")
@@ -229,18 +243,14 @@ class AdCleanerActivity : ComponentActivity() {
         flag("android.permission.READ_CONTACTS", 1, "ĐỌC DANH BẠ")
         flag("android.permission.RECORD_AUDIO", 1, "MICRO")
         flag("android.permission.CAMERA", 1, "CAMERA")
-
         val installer = runCatching { pm.getInstallSourceInfo(packageName).installingPackageName }.getOrNull()
         if (installer == null || installer == "com.android.packageinstaller") { score += 1; reasons += "NGUỒN CÀI ĐẶT KHÔNG RÕ" }
-
         val apkPath = app.sourceDir.orEmpty()
         if (apkPath.contains("/data/local/tmp", ignoreCase = true)) { score += 2; reasons += "APK TỪ VÙNG TẠM" }
-
         val suspiciousName = listOf("adware", "reward", "cleaner", "update", "security", "virus", "booster").any {
             label.contains(it, ignoreCase = true) || packageName.contains(it, ignoreCase = true)
         }
         if (suspiciousName && score > 0) { score += 1; reasons += "TÊN ỨNG DỤNG ĐÁNG NGỜ" }
-
         return if (score >= 3) SuspiciousApp(packageName, label, score.coerceAtMost(10), reasons.distinct(), loadAppIcon(app)) else null
     }
 
