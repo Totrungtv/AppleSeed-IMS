@@ -40,6 +40,7 @@ private val CleanerPanel = Color(0xFF0D1218)
 private val CleanerText = Color(0xFFF5F7FA)
 private val CleanerMuted = Color(0xFF9AA7B5)
 private val CleanerCyan = Color(0xFF46E6FF)
+private val CleanerGood = Color(0xFF42E6A4)
 private val CleanerWarn = Color(0xFFFFC857)
 private val CleanerDanger = Color(0xFFFF667A)
 
@@ -75,7 +76,7 @@ class AdCleanerActivity : ComponentActivity() {
             Thread {
                 val command = """
                     pm list packages -3 | cut -d: -f2 | while read p; do
-                      d="${'$'}(" + "dumpsys package \"${'$'}p\" 2>/dev/null" + ")";
+                      d="${'$'}(dumpsys package \"${'$'}p\" 2>/dev/null)";
                       score=0; reasons="";
                       echo "${'$'}d" | grep -q "android.permission.SYSTEM_ALERT_WINDOW" && { score=${'$'}((score+3)); reasons="${'$'}reasons|HIỂN THỊ TRÊN ỨNG DỤ"; };
                       echo "${'$'}d" | grep -q "android.permission.RECEIVE_BOOT_COMPLETED" && { score=${'$'}((score+1)); reasons="${'$'}reasons|TỰ KHỞI ĐỘNG"; };
@@ -85,21 +86,30 @@ class AdCleanerActivity : ComponentActivity() {
                     done
                 """.trimIndent().replace("\n", " ")
                 val result = LocalAdbEngine.shell(command)
-                val parsed = result.lineSequence().mapNotNull { line ->
-                    if (!line.startsWith("AS|")) return@mapNotNull null
-                    val parts = line.split("|", limit = 4)
-                    if (parts.size < 4) return@mapNotNull null
-                    val score = parts[1].toIntOrNull() ?: return@mapNotNull null
-                    SuspiciousApp(parts[2], score, parts[3].split("|").filter { it.isNotBlank() })
-                }.distinctBy { it.packageName }.sortedByDescending { it.score }
+                val parsed: List<SuspiciousApp> = result.lineSequence()
+                    .mapNotNull { line ->
+                        if (!line.startsWith("AS|")) return@mapNotNull null
+                        val parts = line.split("|", limit = 4)
+                        if (parts.size < 4) return@mapNotNull null
+                        val score = parts[1].toIntOrNull() ?: return@mapNotNull null
+                        SuspiciousApp(
+                            parts[2],
+                            score,
+                            parts[3].split("|").filter { it.isNotBlank() }
+                        )
+                    }
+                    .distinctBy { it.packageName }
+                    .sortedByDescending { it.score }
+                    .toList()
+
                 runOnUiThread {
                     apps.clear()
                     apps.addAll(parsed)
                     scanning = false
-                    message = if (parsed.isEmpty()) {
-                        "Không phát hiện ứng dụng bên thứ ba có dấu hiệu quảng cáo mạnh theo bộ lọc hiện tại."
+                    if (parsed.isEmpty()) {
+                        message = "Không phát hiện ứng dụng bên thứ ba có dấu hiệu quảng cáo mạnh theo bộ lọc hiện tại."
                     } else {
-                        "Phát hiện ${parsed.size} ứng dụng cần kiểm tra. Đây là danh sách NGHI VẤN, không phải kết luận virus."
+                        message = "Phát hiện ${parsed.count()} ứng dụng cần kiểm tra. Đây là danh sách NGHI VẤN, không phải kết luận virus."
                     }
                 }
             }.start()
