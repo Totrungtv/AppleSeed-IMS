@@ -82,13 +82,18 @@ object LocalAdbEngine {
                         val host = connectHost
                         val port = connectPort
                         if (host != null && port != null) {
-                            connect(host, port) { ok, message -> if (!ok) Log.d(TAG, message) }
+                            connectEndpoint(host, port) { ok, message -> if (!ok) Log.d(TAG, message) }
                         } else {
-                            discoverConnectPort({ foundHost, foundPort -> connect(foundHost, foundPort) }, { Log.d(TAG, it) })
+                            discoverConnectPort(
+                                { foundHost, foundPort -> connectEndpoint(foundHost, foundPort) },
+                                { Log.d(TAG, it) }
+                            )
                         }
                     }
                     Thread.sleep(AUTO_CONNECT_RETRY_MS)
-                } catch (_: InterruptedException) { break }
+                } catch (_: InterruptedException) {
+                    break
+                }
             }
         }.start()
     }
@@ -108,12 +113,17 @@ object LocalAdbEngine {
             try {
                 while (pairingInProgress.get()) {
                     if (pairingPort == null && !pairingDiscoveryInFlight.get()) {
-                        discoverPairingPort({ host, port -> Log.i(TAG, "PAIR PORT READY $host:$port") }, { Log.d(TAG, it) })
+                        discoverPairingPort(
+                            { host, port -> Log.i(TAG, "PAIR PORT READY $host:$port") },
+                            { Log.d(TAG, it) }
+                        )
                     }
                     Thread.sleep(1000)
                 }
             } catch (_: InterruptedException) {
-            } finally { pairingDiscoveryLoopActive.set(false) }
+            } finally {
+                pairingDiscoveryLoopActive.set(false)
+            }
         }.start()
     }
 
@@ -125,7 +135,10 @@ object LocalAdbEngine {
 
     fun discoverPairingPort(onFound: (String, Int) -> Unit, onError: (String) -> Unit = {}) {
         if (!pairingDiscoveryInFlight.compareAndSet(false, true)) return
-        discover(PAIRING_SERVICE, onFound, { pairingDiscoveryInFlight.set(false); onError(it) }) { info ->
+        discover(PAIRING_SERVICE, onFound, { error ->
+            pairingDiscoveryInFlight.set(false)
+            onError(error)
+        }) { info ->
             val host = resolvedHost(info)
             pairingHost = host
             pairingPort = info.port
@@ -134,7 +147,10 @@ object LocalAdbEngine {
 
     fun discoverConnectPort(onFound: (String, Int) -> Unit, onError: (String) -> Unit = {}) {
         if (!connectDiscoveryActive.compareAndSet(false, true)) return
-        discover(CONNECT_SERVICE, onFound, { connectDiscoveryActive.set(false); onError(it) }) { info ->
+        discover(CONNECT_SERVICE, onFound, { error ->
+            connectDiscoveryActive.set(false)
+            onError(error)
+        }) { info ->
             val host = resolvedHost(info)
             connectHost = host
             connectPort = info.port
@@ -149,11 +165,21 @@ object LocalAdbEngine {
     }
 
     @Suppress("DEPRECATION")
-    private fun discover(serviceType: String, onFound: (String, Int) -> Unit, onError: (String) -> Unit, save: (NsdServiceInfo) -> Unit) {
+    private fun discover(
+        serviceType: String,
+        onFound: (String, Int) -> Unit,
+        onError: (String) -> Unit,
+        save: (NsdServiceInfo) -> Unit
+    ) {
         val ctx = appContext ?: return onError("ADB engine chưa khởi tạo")
         val nsd = ctx.getSystemService(Context.NSD_SERVICE) as NsdManager
         val wifi = ctx.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val lock = runCatching { wifi.createMulticastLock("AppleSeedIMS-mdns").apply { setReferenceCounted(false); acquire() } }.getOrNull()
+        val lock = runCatching {
+            wifi.createMulticastLock("AppleSeedIMS-mdns").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }.getOrNull()
         val finished = AtomicBoolean(false)
         lateinit var listener: NsdManager.DiscoveryListener
 
@@ -166,49 +192,81 @@ object LocalAdbEngine {
         }
 
         listener = object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(type: String?) { Log.i(TAG, "mDNS START $type") }
+            override fun onDiscoveryStarted(type: String?) {
+                Log.i(TAG, "mDNS START $type")
+            }
+
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (finished.get()) return
                 if (!(serviceInfo.serviceType ?: "").contains(serviceType)) return
                 runCatching {
                     nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) { Log.w(TAG, "mDNS RESOLVE FAIL $serviceType $errorCode") }
+                        override fun onResolveFailed(info: NsdServiceInfo?, errorCode: Int) {
+                            Log.w(TAG, "mDNS RESOLVE FAIL $serviceType $errorCode")
+                        }
+
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             if (finished.get()) return
                             runCatching {
-                                resolvedHost(info)
-                                save(info)
                                 val host = resolvedHost(info)
                                 val port = info.port
+                                save(info)
                                 finish()
                                 onFound(host, port)
-                            }.onFailure { finish(); onError("mDNS resolve host failed: ${it.message}") }
+                            }.onFailure {
+                                finish()
+                                onError("mDNS resolve host failed: ${it.message}")
+                            }
                         }
                     })
                 }.onFailure { Log.w(TAG, "mDNS resolve request failed", it) }
             }
-            override fun onServiceLost(serviceInfo: NsdServiceInfo?) {}
-            override fun onDiscoveryStopped(type: String?) { Log.d(TAG, "mDNS STOP $type") }
-            override fun onStartDiscoveryFailed(type: String?, errorCode: Int) { finish(); onError("Wireless Debugging mDNS không khởi động được ($errorCode)") }
-            override fun onStopDiscoveryFailed(type: String?, errorCode: Int) {}
+
+            override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
+
+            override fun onDiscoveryStopped(type: String?) {
+                Log.d(TAG, "mDNS STOP $type")
+            }
+
+            override fun onStartDiscoveryFailed(type: String?, errorCode: Int) {
+                finish()
+                onError("Wireless Debugging mDNS không khởi động được ($errorCode)")
+            }
+
+            override fun onStopDiscoveryFailed(type: String?, errorCode: Int) = Unit
         }
 
-        runCatching { nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener) }.onFailure {
-            finish(); onError("Không bắt đầu được mDNS: ${it.message ?: it.javaClass.simpleName}")
+        runCatching {
+            nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
+        }.onFailure {
+            finish()
+            onError("Không bắt đầu được mDNS: ${it.message ?: it.javaClass.simpleName}")
             return
         }
+
         Thread {
-            try { Thread.sleep(DISCOVERY_TIMEOUT_MS) } catch (_: InterruptedException) { return@Thread }
-            if (!finished.get()) { finish(); onError("Không tìm thấy $serviceType trong ${DISCOVERY_TIMEOUT_MS / 1000}s") }
+            try {
+                Thread.sleep(DISCOVERY_TIMEOUT_MS)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+            if (!finished.get()) {
+                finish()
+                onError("Không tìm thấy $serviceType trong ${DISCOVERY_TIMEOUT_MS / 1000}s")
+            }
         }.start()
     }
 
     fun pair(code: String, onDone: (Boolean, String) -> Unit) {
         val cleanCode = code.trim()
-        if (cleanCode.length != 6 || cleanCode.any { !it.isDigit() }) { onDone(false, "Mã Pair phải đủ 6 chữ số"); return }
+        if (cleanCode.length != 6 || cleanCode.any { !it.isDigit() }) {
+            onDone(false, "Mã Pair phải đủ 6 chữ số")
+            return
+        }
         pairingInProgress.set(true)
         startPairingDiscoveryLoop()
         var done = false
+
         fun finishPair(ok: Boolean, message: String) {
             if (done) return
             done = true
@@ -217,14 +275,20 @@ object LocalAdbEngine {
             pairingPort = null
             onDone(ok, message)
         }
+
         Thread {
             val deadline = System.currentTimeMillis() + PAIR_PORT_WAIT_MS
-            while (pairingInProgress.get() && pairingPort == null && System.currentTimeMillis() < deadline) Thread.sleep(250)
+            while (pairingInProgress.get() && pairingPort == null && System.currentTimeMillis() < deadline) {
+                Thread.sleep(250)
+            }
             if (!pairingInProgress.get() || done) return@Thread
             val host = pairingHost
             val port = pairingPort
-            if (host == null || port == null) finishPair(false, "Không tìm thấy Wireless Debugging pairing service.")
-            else doPair(host, port, cleanCode, ::finishPair)
+            if (host == null || port == null) {
+                finishPair(false, "Không tìm thấy Wireless Debugging pairing service.")
+            } else {
+                doPair(host, port, cleanCode, ::finishPair)
+            }
         }.start()
     }
 
@@ -233,39 +297,68 @@ object LocalAdbEngine {
             runCatching {
                 runBlocking { Kadb.pair(host, port, code, appContext!!.filesDir.absolutePath) }
                 waitForConnect(done)
-            }.onFailure { done(false, "Ghép nối Wireless ADB thất bại: ${it.message ?: it.javaClass.simpleName}") }
+            }.onFailure {
+                done(false, "Ghép nối Wireless ADB thất bại: ${it.message ?: it.javaClass.simpleName}")
+            }
         }.start()
     }
 
     private fun waitForConnect(done: (Boolean, String) -> Unit, attempt: Int = 0) {
-        if (attempt >= 12) { done(false, "Đã Pair nhưng chưa thiết lập được Wireless ADB."); return }
+        if (attempt >= 12) {
+            done(false, "Đã Pair nhưng chưa thiết lập được Wireless ADB.")
+            return
+        }
         Thread {
             Thread.sleep(700)
             discoverConnectPort(
-                { host, port -> connect(host, port) { ok, message -> if (ok) done(true, message) else waitForConnect(done, attempt + 1) } },
+                { host, port ->
+                    connectEndpoint(host, port) { ok, message ->
+                        if (ok) done(true, message) else waitForConnect(done, attempt + 1)
+                    }
+                },
                 { waitForConnect(done, attempt + 1) }
             )
         }.start()
     }
 
-    fun connect(port: Int? = connectPort, onDone: (Boolean, String) -> Unit = { _, _ -> }) {
+    fun connect(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
         val host = connectHost
-        if (host != null && port != null) connect(host, port, onDone)
-        else discoverConnectPort({ foundHost, foundPort -> connect(foundHost, foundPort, onDone) }, { onDone(false, it) })
+        val port = connectPort
+        if (host != null && port != null) {
+            connectEndpoint(host, port, onDone)
+        } else {
+            discoverConnectPort(
+                { foundHost, foundPort -> connectEndpoint(foundHost, foundPort, onDone) },
+                { onDone(false, it) }
+            )
+        }
     }
 
-    private fun connect(host: String, port: Int, onDone: (Boolean, String) -> Unit) {
-        if (activeKadb != null) { onDone(true, "WIRELESS ADB ONLINE"); return }
-        val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
+    private fun connectEndpoint(host: String, port: Int, onDone: (Boolean, String) -> Unit) {
+        if (activeKadb != null) {
+            onDone(true, "WIRELESS ADB ONLINE")
+            return
+        }
+        val ctx = appContext ?: run {
+            onDone(false, "ADB engine chưa khởi tạo")
+            return
+        }
         Thread {
             runCatching {
+                Log.i(TAG, "CONNECT START $host:$port")
+                activeKadb?.close()
                 val adb = Kadb.create(host, port, 15000, 15000)
                 val probe = adb.shell("echo APPLE_SEED_ADB_OK")
-                check(probe.exitCode == 0 && probe.output.contains("APPLE_SEED_ADB_OK")) { "ADB shell probe thất bại" }
+                check(probe.exitCode == 0 && probe.output.contains("APPLE_SEED_ADB_OK")) {
+                    "ADB shell probe thất bại"
+                }
                 activeKadb = adb
                 connectHost = host
                 connectPort = port
-                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString("connect_host", host); putInt("connect_port", port) }
+                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+                    putString("connect_host", host)
+                    putInt("connect_port", port)
+                }
                 onDone(true, "WIRELESS ADB ONLINE — $host:$port")
             }.onFailure {
                 runCatching { activeKadb?.close() }
@@ -276,19 +369,38 @@ object LocalAdbEngine {
     }
 
     fun reconnectSaved(onDone: (Boolean, String) -> Unit = { _, _ -> }) {
-        val ctx = appContext ?: return onDone(false, "ADB engine chưa khởi tạo")
+        val ctx = appContext ?: run {
+            onDone(false, "ADB engine chưa khởi tạo")
+            return
+        }
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val host = prefs.getString("connect_host", null)
         val port = prefs.getInt("connect_port", 0).takeIf { it > 0 }
-        if (host != null && port != null) connect(host, port, onDone)
-        else discoverConnectPort({ h, p -> connect(h, p, onDone) }, { onDone(false, it) })
+        if (host != null && port != null) {
+            connectEndpoint(host, port) { ok, status ->
+                if (ok) onDone(true, status)
+                else {
+                    connectHost = null
+                    connectPort = null
+                    discoverConnectPort(
+                        { foundHost, foundPort -> connectEndpoint(foundHost, foundPort, onDone) },
+                        { onDone(false, it) }
+                    )
+                }
+            }
+        } else {
+            connect(onDone)
+        }
     }
 
     fun shell(command: String): String {
         val adb = activeKadb ?: return "ADB OFFLINE"
         return runCatching {
             val result = adb.shell(command)
-            buildString { append(result.output); if (result.exitCode != 0) append("\n[exit ${result.exitCode}]") }.trim()
+            buildString {
+                append(result.output)
+                if (result.exitCode != 0) append("\n[exit ${result.exitCode}]")
+            }.trim()
         }.getOrElse {
             runCatching { activeKadb?.close() }
             activeKadb = null
@@ -297,7 +409,10 @@ object LocalAdbEngine {
     }
 
     fun runBroker(mode: String, subId: Int = -1, patch: String = "", onDone: (Boolean, String) -> Unit) {
-        if (activeKadb == null) { onDone(false, "WIRELESS ADB OFFLINE"); return }
+        if (activeKadb == null) {
+            onDone(false, "WIRELESS ADB OFFLINE")
+            return
+        }
         Log.w(TAG, "IMS broker disabled: mode=$mode subId=$subId patchLength=${patch.length}")
         onDone(false, "IMS BROKER ĐÃ TẮT TRONG BẢN SECURITY-CLEAN. Wireless ADB vẫn hoạt động bình thường.")
     }
