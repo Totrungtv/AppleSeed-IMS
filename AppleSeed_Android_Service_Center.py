@@ -392,15 +392,55 @@ class AndroidTool(QMainWindow):
                 # ADB shell là lớp thực thi quyền; APK chỉ đọc/hiển thị trạng thái sau khi tool áp dụng.
                 self._volte_progress(5,"Cài Apple Seed VoLTE APK")
                 if apk.exists():
-                    rc,o=self.run(["-s",self.serial,"install","-r","-d",str(apk)],120)
-                    out.append(f"\n--- INSTALL APP rc={rc} ---\n{o}")
+                    # OPPO/ColorOS có thể chặn ADB APK bằng Package Verifier/SafeCenter.
+                    # Tạm tắt verifier ở mức ADB shell, cài APK, rồi LUÔN khôi phục giá trị cũ.
+                    verifier_keys=["package_verifier_enable","verifier_verify_adb_installs"]
+                    old_verifier={}
+                    for key in verifier_keys:
+                        try:
+                            rc_v,o_v=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
+                            old_verifier[key]=o_v.strip() if o_v.strip() else "null"
+                        except Exception:
+                            old_verifier[key]="null"
+                    try:
+                        for key in verifier_keys:
+                            try:
+                                self.run(["-s",self.serial,"shell","settings","put","global",key,"0"],8)
+                            except Exception: pass
+                        self._volte_progress(8,"Tắt kiểm tra APK tạm thời để cài")
+                        install_variants=[
+                            ["-s",self.serial,"install","-r","-d","--no-streaming",str(apk)],
+                            ["-s",self.serial,"install","-r","-d",str(apk)]
+                        ]
+                        rc,o=1,""
+                        for install_cmd in install_variants:
+                            rc,o=self.run(install_cmd,120)
+                            out.append(f"\\n--- INSTALL APP rc={rc} ---\\n{o}")
+                            if rc==0: break
+                            # Nếu lỗi là verification thì thử biến thể kế tiếp.
+                            if "INSTALL_FAILED_VERIFICATION_FAILURE" not in o and "verification" not in o.lower():
+                                break
+                    finally:
+                        for key,value in old_verifier.items():
+                            try:
+                                restore="null" if not value else value
+                                if restore=="null":
+                                    self.run(["-s",self.serial,"shell","settings","delete","global",key],8)
+                                else:
+                                    self.run(["-s",self.serial,"shell","settings","put","global",key,restore],8)
+                            except Exception as e:
+                                out.append(f"\\nRESTORE {key}: {e}")
                     if rc!=0:
                         try:
                             installed=self.shell("pm list packages | grep -Fx 'package:vn.appleseed.volte'",8)
                         except Exception:
                             installed=""
                         if "vn.appleseed.volte" not in installed:
-                            raise RuntimeError("Không cài được AppleSeed_VoLTE.apk: "+(o or "ADB install thất bại"))
+                            raise RuntimeError(
+                                "Không cài được AppleSeed_VoLTE.apk. OPPO/ColorOS vẫn đang chặn xác minh APK. "
+                                "Hãy bật Developer options > USB debugging và 'Install via USB/USB installation' "
+                                "(nếu máy có mục này), sau đó chạy 1-CLICK lại.\\n\\n"+(o or "ADB install thất bại")
+                            )
                 else:
                     out.append("\n--- INSTALL APP ---\nBỏ qua: không có apps/AppleSeed_VoLTE.apk")
                 try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8")
