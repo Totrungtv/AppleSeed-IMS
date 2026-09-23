@@ -384,11 +384,28 @@ class AndroidTool(QMainWindow):
         def w():
             out=["===== APPLE SEED NATIVE VoLTE 1-CLICK ====="]
             remote="/data/local/tmp/hbg_volte_fixer.dex"
+            apk=self.base/"apps"/"AppleSeed_VoLTE.apk"
             try:
                 folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}";folder.mkdir(parents=True,exist_ok=True)
+                # 1-CLICK: cài APK -> áp dụng cấu hình bằng ADB shell -> mở app.
+                # WRITE_SECURE_SETTINGS là signature-only đối với app bên thứ ba, nên không ép pm grant.
+                # ADB shell là lớp thực thi quyền; APK chỉ đọc/hiển thị trạng thái sau khi tool áp dụng.
+                self._volte_progress(5,"Cài Apple Seed VoLTE APK")
+                if apk.exists():
+                    rc,o=self.run(["-s",self.serial,"install","-r","-d",str(apk)],120)
+                    out.append(f"\n--- INSTALL APP rc={rc} ---\n{o}")
+                    if rc!=0:
+                        try:
+                            installed=self.shell("pm list packages | grep -Fx 'package:vn.appleseed.volte'",8)
+                        except Exception:
+                            installed=""
+                        if "vn.appleseed.volte" not in installed:
+                            raise RuntimeError("Không cài được AppleSeed_VoLTE.apk: "+(o or "ADB install thất bại"))
+                else:
+                    out.append("\n--- INSTALL APP ---\nBỏ qua: không có apps/AppleSeed_VoLTE.apk")
                 try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8")
                 except Exception as e: out.append("BACKUP: bỏ qua - "+str(e))
-                self._volte_progress(10,"Đưa Native VoLTE runner vào máy")
+                self._volte_progress(18,"Đưa Native VoLTE runner vào máy")
                 rc,o=self.run(["-s",self.serial,"push",str(dex),remote],30);out.append(f"PUSH DEX rc={rc}\n{o}")
                 if rc==0:
                     for proc in ("app_process64","app_process"):
@@ -396,13 +413,25 @@ class AndroidTool(QMainWindow):
                         rc,o=self.run(["-s",self.serial,"shell",proc,"-Djava.class.path="+remote,"/system/bin","com.hbg.volte.VolteFixer","ENABLE"],25)
                         out.append(f"{proc} rc={rc}\n{o}")
                         if rc==0:break
-                self._volte_progress(55,"Áp dụng VoLTE flags")
+                self._volte_progress(55,"Áp dụng VoLTE flags bằng ADB shell")
                 for cmd in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
                     try:
                         rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],8)
                         out.append(f"\n{cmd}\nrc={rc}\n{o}")
                     except Exception as e: out.append(f"\n{cmd}\nTIMEOUT/ERROR: {e}")
-                self._volte_progress(70,"Đọc trạng thái thiết bị")
+                self._volte_progress(68,"Đọc lại 4 cờ VoLTE")
+                for key in ["volte_vt_enabled","enhanced_4g_mode_enabled","volte_enabled","carrier_vt_enabled"]:
+                    try:
+                        rc,o=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
+                        out.append(f"\nVERIFY {key} rc={rc}: {o.strip() or '—'}")
+                    except Exception as e: out.append(f"\nVERIFY {key}: ERROR {e}")
+                self._volte_progress(74,"Mở Apple Seed VoLTE")
+                try:
+                    rc,o=self.run(["-s",self.serial,"shell","monkey","-p","vn.appleseed.volte","1"],15)
+                    out.append(f"\n--- OPEN APP rc={rc} ---\n{o}")
+                except Exception as e:
+                    out.append(f"\n--- OPEN APP ---\nERROR: {e}")
+                self._volte_progress(78,"Đọc trạng thái thiết bị")
                 for a,cmd,t in [("MODEL","getprop ro.product.model",5),("ANDROID","getprop ro.build.version.release",5)]:
                     try:
                         rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],t);out.append(f"\n--- {a} rc={rc} ---\n{o}")
@@ -423,7 +452,7 @@ class AndroidTool(QMainWindow):
                 except Exception as e:
                     out.append("\n--- IMS ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
                 self._volte_progress(100,"Native VoLTE 1-Click hoàn tất")
-                out.append("\n===== KẾT LUẬN =====\nNative runner/fallback đã chạy; CarrierConfig/IMS timeout chỉ là bước xác minh.")
+                out.append("\n===== KẾT LUẬN =====\n1-CLICK đã hoàn thành chuỗi CÀI APK → ADB FLAGS → MỞ APP. WRITE_SECURE_SETTINGS không cần cấp cho APK.")
             except Exception as e:
                 out.append("\nLỖI THỰC THI: "+str(e))
             finally:
