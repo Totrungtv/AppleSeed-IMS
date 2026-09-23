@@ -441,47 +441,44 @@ class AndroidTool(QMainWindow):
             out=["===== CÀI APP VoLTE — OPPO/COLOROS ====="]
             remote="/sdcard/AppleSeed_VoLTE.apk"
             try:
-                self._volte_progress(10,"Chuẩn bị APK")
+                self._volte_progress(10,"Push APK")
                 rc,o=self.run(["-s",self.serial,"push",str(apk),remote],60)
                 out.append(f"PUSH rc={rc}\n{o}")
                 if rc!=0: raise RuntimeError(o or "ADB push thất bại")
 
-                # ColorOS có thể nhận Intent nhưng không hiển thị Package Installer.
-                # Thử cài trực tiếp bằng Package Manager shell trước; đây không phải adb install.
-                self._volte_progress(55,"Cài APK bằng Package Manager trên điện thoại")
-                rc,o=self.run(["-s",self.serial,"shell","pm","install","-r","-d",remote],90)
-                out.append(f"PM INSTALL rc={rc}\n{o}")
+                # ColorOS has its own SafeCenter verification service. On this ROM,
+                # pm install/adb install can be rejected even when Google verifier is disabled.
+                # Try PackageInstaller via content URI first, then legacy file URI.
+                self._volte_progress(45,"Mở trình cài ColorOS")
+                rc,o=self.run(["-s",self.serial,"shell","am","start",
+                    "-a","android.intent.action.VIEW",
+                    "-d","file:///sdcard/AppleSeed_VoLTE.apk",
+                    "-t","application/vnd.android.package-archive",
+                    "-f","0x10000000"],15)
+                out.append(f"INSTALLER rc={rc}\n{o}")
 
-                if rc==0 and "Success" in o:
-                    self._volte_progress(90,"Xác minh package")
-                    rg,og=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
-                    out.append(f"VERIFY rc={rg}\n{og}")
-                    self.post(lambda:QMessageBox.information(
-                        self,"Apple Seed VoLTE","✅ Cài Apple Seed VoLTE thành công."))
-                else:
-                    # Nếu pm install bị chặn, thử mở Package Installer làm phương án cuối.
-                    self._volte_progress(75,"Thử mở trình cài Android")
-                    rc2,o2=self.run([
-                        "-s",self.serial,"shell","am","start",
-                        "-a","android.intent.action.INSTALL_PACKAGE",
-                        "-d","file:///sdcard/AppleSeed_VoLTE.apk",
-                        "-t","application/vnd.android.package-archive",
-                        "-f","0x10000000"
-                    ],15)
-                    out.append(f"PACKAGE INSTALLER rc={rc2}\n{o2}")
-                    out.append("\n⚠️ Nếu điện thoại vẫn không hiện màn hình cài, ColorOS đang chặn file APK qua Intent.")
-                    self.post(lambda:QMessageBox.warning(
-                        self,"OPPO chưa mở trình cài",
-                        "Package Installer không hiện trên điện thoại.\\n\\n"
-                        "Tool đã thử cài bằng Package Manager và mở trình cài Android.\\n"
-                        "Xem log bên dưới để biết OPPO chặn ở bước nào."))
+                # Also open OPPO's app installation/security settings so the user can
+                # explicitly allow installation if SafeCenter requires it.
+                self._volte_progress(75,"Mở cài đặt bảo mật OPPO")
+                rc2,o2=self.run(["-s",self.serial,"shell","am","start",
+                    "-a","android.settings.SECURITY_SETTINGS"],15)
+                out.append(f"SECURITY SETTINGS rc={rc2}\n{o2}")
+
+                out.append("\nSafeCenter của OPPO đang có VerifyControlService; ADB/pm bị nó chặn.")
+                out.append("APK đã nằm tại /sdcard/AppleSeed_VoLTE.apk.")
+                out.append("Nếu trình cài chưa hiện, mở File Manager > APK và bấm Cài đặt trực tiếp.")
+                self.post(lambda:QMessageBox.information(
+                    self,"Apple Seed VoLTE",
+                    "Đã đưa APK vào máy.\\n\\n"
+                    "OPPO đang chặn cài qua ADB bằng SafeCenter.\\n"
+                    "Nếu màn hình cài chưa hiện: mở Quản lý tệp → AppleSeed_VoLTE.apk → Cài đặt."
+                ))
             except Exception as e:
                 out.append("LỖI: "+str(e))
                 self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APK lỗi",e))
             finally:
-                self._volte_progress(100,"Hoàn tất cài APK")
+                self._volte_progress(100,"Hoàn tất")
                 self.showout(self.volte_out,"CÀI APP VoLTE","\n\n".join(out))
-                self.log("VoLTE APK: push + Package Manager/Package Installer.")
         self.threaded(w)
 
     def open_volte_app(self):
