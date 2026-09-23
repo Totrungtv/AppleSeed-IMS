@@ -438,58 +438,50 @@ class AndroidTool(QMainWindow):
         if not apk.exists():
             QMessageBox.warning(self,"APK","Thiếu apps/AppleSeed_VoLTE.apk");return
         def w():
-            out=["===== CÀI APP VoLTE — CHẾ ĐỘ OPPO/COLOROS ====="]
+            out=["===== CÀI APP VoLTE — OPPO/COLOROS ====="]
             remote="/sdcard/AppleSeed_VoLTE.apk"
             try:
                 self._volte_progress(10,"Chuẩn bị APK")
-                self._volte_progress(30,"Đưa APK vào điện thoại")
                 rc,o=self.run(["-s",self.serial,"push",str(apk),remote],60)
                 out.append(f"PUSH rc={rc}\n{o}")
-                if rc!=0:
-                    raise RuntimeError(o or "ADB push thất bại")
+                if rc!=0: raise RuntimeError(o or "ADB push thất bại")
 
-                self._volte_progress(65,"Mở trình cài APK Android")
-                # ACTION_INSTALL_PACKAGE gọi thẳng Package Installer, thay vì VIEW file.
-                rc,o=self.run([
-                    "-s",self.serial,"shell","am","start",
-                    "-a","android.intent.action.INSTALL_PACKAGE",
-                    "-d","file:///sdcard/AppleSeed_VoLTE.apk",
-                    "-t","application/vnd.android.package-archive",
-                    "-f","0x10000000"
-                ],15)
-                out.append(f"PACKAGE INSTALLER rc={rc}\n{o}")
+                # ColorOS có thể nhận Intent nhưng không hiển thị Package Installer.
+                # Thử cài trực tiếp bằng Package Manager shell trước; đây không phải adb install.
+                self._volte_progress(55,"Cài APK bằng Package Manager trên điện thoại")
+                rc,o=self.run(["-s",self.serial,"shell","pm","install","-r","-d",remote],90)
+                out.append(f"PM INSTALL rc={rc}\n{o}")
 
-                if rc!=0:
-                    # Một số ROM không đăng ký INSTALL_PACKAGE; thử VIEW làm fallback.
+                if rc==0 and "Success" in o:
+                    self._volte_progress(90,"Xác minh package")
+                    rg,og=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
+                    out.append(f"VERIFY rc={rg}\n{og}")
+                    self.post(lambda:QMessageBox.information(
+                        self,"Apple Seed VoLTE","✅ Cài Apple Seed VoLTE thành công."))
+                else:
+                    # Nếu pm install bị chặn, thử mở Package Installer làm phương án cuối.
+                    self._volte_progress(75,"Thử mở trình cài Android")
                     rc2,o2=self.run([
                         "-s",self.serial,"shell","am","start",
-                        "-a","android.intent.action.VIEW",
+                        "-a","android.intent.action.INSTALL_PACKAGE",
                         "-d","file:///sdcard/AppleSeed_VoLTE.apk",
                         "-t","application/vnd.android.package-archive",
                         "-f","0x10000000"
                     ],15)
-                    out.append(f"PACKAGE VIEW FALLBACK rc={rc2}\n{o2}")
-                    if rc2!=0:
-                        raise RuntimeError(o2 or o or "Không mở được trình cài APK")
-
-                out.append("")
-                out.append("Đã mở trình cài APK trên điện thoại.")
-                out.append("Không dùng adb install, nên không kích hoạt đường xác minh APK qua USB.")
-                out.append("Nếu Android hỏi quyền nguồn không xác định, cho phép rồi bấm Cài đặt.")
-
-                self.post(lambda:QMessageBox.information(
-                    self,"Apple Seed VoLTE",
-                    "Đã mở trình cài APK trên điện thoại.\n\n"
-                    "👉 Nhìn trên điện thoại và bấm CÀI ĐẶT.\n"
-                    "Tool không dùng 'adb install'."
-                ))
+                    out.append(f"PACKAGE INSTALLER rc={rc2}\n{o2}")
+                    out.append("\n⚠️ Nếu điện thoại vẫn không hiện màn hình cài, ColorOS đang chặn file APK qua Intent.")
+                    self.post(lambda:QMessageBox.warning(
+                        self,"OPPO chưa mở trình cài",
+                        "Package Installer không hiện trên điện thoại.\\n\\n"
+                        "Tool đã thử cài bằng Package Manager và mở trình cài Android.\\n"
+                        "Xem log bên dưới để biết OPPO chặn ở bước nào."))
             except Exception as e:
                 out.append("LỖI: "+str(e))
                 self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APK lỗi",e))
             finally:
-                self._volte_progress(100,"Hoàn tất mở trình cài")
-                self.showout(self.volte_out,"CÀI APP VoLTE","\n".join(out))
-                self.log("VoLTE APK: push + mở Package Installer.")
+                self._volte_progress(100,"Hoàn tất cài APK")
+                self.showout(self.volte_out,"CÀI APP VoLTE","\n\n".join(out))
+                self.log("VoLTE APK: push + Package Manager/Package Installer.")
         self.threaded(w)
 
     def open_volte_app(self):
