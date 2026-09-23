@@ -1,0 +1,310 @@
+l)],30)
+                self.shell(f"rm -f {remote}",10,log_output=False)
+                self.q.put(("panel_text","control_out",f"QUAY MÀN HÌNH THÀNH CÔNG\n\nĐã lưu: {local}"))
+            except Exception as e:self.q.put(("panel_text","control_out","LỖI QUAY MÀN HÌNH: "+str(e)))
+        threading.Thread(target=w,daemon=True).start()
+
+    # ---------- apps ----------
+    def list_packages(self):
+        try:
+            q=self.pkg.get().strip()
+            out=self.shell("pm list packages -3"+(f" | grep -i '{q}'" if q else ""),40,log_output=False)
+            self.q.put(("panel_text","app_list",out))
+        except Exception as e:self.q.put(("panel_text","app_list","LỖI: "+str(e)))
+
+    def install_apk(self):
+        p=filedialog.askopenfilename(filetypes=[("Android APK","*.apk"),("All files","*.*")])
+        if not p:return
+        try:
+            rc,out=self.run(["-s",self.serial(),"install","-r",p],120)
+            self.q.put(("panel_text","app_list",f"CÀI APK\nMã kết quả: {rc}\n{out.strip()}"))
+        except Exception as e:self.q.put(("panel_text","app_list","LỖI CÀI APK: "+str(e)))
+
+    def _pkg(self):return self.pkg.get().strip()
+    def uninstall_pkg(self):
+        p=self._pkg()
+        if p and messagebox.askyesno("Gỡ ứng dụng", "Bạn có chắc muốn gỡ gói ứng dụng này không?\n\n"+p):
+            try:
+                rc,out=self.run(["-s",self.serial(),"uninstall",p],60)
+                self.q.put(("panel_text","app_list",f"GỠ ỨNG DỤNG: {p}\nMã kết quả: {rc}\n{out.strip()}"))
+            except Exception as e:self.q.put(("panel_text","app_list","LỖI: "+str(e)))
+    def force_stop(self):
+        p=self._pkg()
+        if p:self.control_shell(f"am force-stop {p}",f"BUỘC DỪNG: {p}")
+    def clear_data(self):
+        p=self._pkg()
+        if p and messagebox.askyesno("Xóa dữ liệu", "Bạn có chắc muốn xóa dữ liệu ứng dụng này không?\n\n"+p):self.control_shell(f"pm clear {p}",f"XÓA DỮ LIỆU: {p}")
+    def launch_pkg(self):
+        p=self._pkg()
+        if p:self.control_shell(f"monkey -p {p} 1",f"MỞ ỨNG DỤNG: {p}")
+    def extract_apk(self):
+        p=self._pkg()
+        if not p:return
+        out=self.shell(f"pm path {shlex_quote(p)}",20,log_output=False)
+        paths=re.findall(r"package:(\S+)",out)
+        if not paths:return
+        local=filedialog.askdirectory()
+        if not local:return
+        for i,r in enumerate(paths):
+            self.run(["-s",self.serial(),"pull",r,local],60)
+        self.q.put(("panel_text","app_list",f"TRÍCH APK THÀNH CÔNG\n\nĐã lấy {len(paths)} tệp APK tới:\n{local}"))
+
+    # ---------- files ----------
+    def file_ls(self):
+        path=self.remote.get().strip()
+        def w():
+            try:self.q.put(("panel_text","files_out",self.shell("ls -lah "+shlex_quote(path),20,log_output=False)))
+            except Exception as e:self.q.put(("panel_text","files_out","LỖI: "+str(e)))
+        threading.Thread(target=w,daemon=True).start()
+    def pull_file(self):
+        r=self.remote.get().strip()
+        if not r:return
+        d=filedialog.askdirectory()
+        if d:
+            try:
+                rc,out=self.run(["-s",self.serial(),"pull",r,d],120)
+                self.q.put(("panel_text","files_out",f"PULL TỆP\nMã kết quả: {rc}\n{out.strip() or 'Hoàn tất.'}"))
+            except Exception as e:self.q.put(("panel_text","files_out","LỖI PULL: "+str(e)))
+    def push_file(self):
+        p=filedialog.askopenfilename()
+        if p:
+            try:
+                rc,out=self.run(["-s",self.serial(),"push",p,self.remote.get().strip()],120)
+                self.q.put(("panel_text","files_out",f"PUSH TỆP\nMã kết quả: {rc}\n{out.strip() or 'Hoàn tất.'}"))
+            except Exception as e:self.q.put(("panel_text","files_out","LỖI PUSH: "+str(e)))
+    def delete_file(self):
+        r=self.remote.get().strip()
+        if r and messagebox.askyesno("Xóa tệp", "Bạn có chắc muốn xóa tệp này không?\n\n"+r):
+            def w():
+                try:
+                    out=self.shell("rm -f "+shlex_quote(r),15,log_output=False)
+                    self.q.put(("panel_text","files_out",f"XÓA TỆP\n{r}\n\n"+(out.strip() or "Đã gửi lệnh xóa.")))
+                except Exception as e:self.q.put(("panel_text","files_out","LỖI XÓA TỆP: "+str(e)))
+            threading.Thread(target=w,daemon=True).start()
+    # ---------- diagnostics ----------
+    def capture_command(self,cmd,target="diag_out",label=None):
+        title=label or "ĐANG THỰC HIỆN"
+        status_attr={"diag_out":"diag_status","net_out":"net_status","volte_out":"volte_status"}.get(target)
+        if status_attr and hasattr(self,status_attr):
+            getattr(self,status_attr).configure(text=f"ĐANG CHẠY: {title} …")
+        widget=getattr(self,target,None)
+        if widget:
+            widget.delete("1.0","end"); widget.insert("end",f"{title}\n\nĐang lấy dữ liệu từ thiết bị…\n")
+        def w():
+            started=time.time()
+            try:
+                out=self.shell(cmd,45,log_output=False)
+                elapsed=time.time()-started
+                self.q.put(("panel_text", target, (label + f"\nThời gian: {elapsed:.1f} giây\n\n" if label else "") + (out.strip() or "Không có dữ liệu trả về.")))
+                if status_attr:self.q.put(("panel_status",status_attr,f"HOÀN TẤT: {title} • {elapsed:.1f} giây"))
+            except Exception as e:
+                self.q.put(("panel_text", target, f"{title}\n\nLỖI: {e}"))
+                if status_attr:self.q.put(("panel_status",status_attr,f"LỖI: {title}"))
+        threading.Thread(target=w,daemon=True).start()
+
+    def _normalize_manual_command(self, cmd, mode):
+        import shlex
+        raw=cmd.strip(); low=raw.lower()
+        if mode=="ADB SHELL":
+            if low.startswith("adb "):
+                parts=[x.strip('"') for x in shlex.split(raw, posix=False)]
+                if "shell" in [x.lower() for x in parts]:
+                    i=[x.lower() for x in parts].index("shell"); raw=" ".join(parts[i+1:])
+                else: raw=" ".join(parts[1:])
+            elif low.startswith("shell "):
+                raw=raw[6:].lstrip()
+            return raw
+        if low.startswith("adb "): return raw[4:].lstrip()
+        return raw
+
+    def run_manual_adb(self):
+        cmd=self.adb_cmd.get().strip()
+        if not cmd or cmd=="Nhập lệnh ADB hoặc lệnh shell tại đây...":return
+        mode=self.adb_mode.get(); s=self.serial()
+        if not s:
+            self.adb_out.delete("1.0","end"); self.adb_out.insert("end","⚠  CHƯA CHỌN THIẾT BỊ ADB.\nHãy chọn thiết bị ở thanh trên rồi chạy lại.\n"); return
+        normalized=self._normalize_manual_command(cmd,mode)
+        if not normalized:return
+        history=list(self.adb_history.cget("values"))
+        if cmd in history:history.remove(cmd)
+        history.insert(0,cmd);self.adb_history.configure(values=history[:50])
+        self.adb_out.delete("1.0","end");self.adb_out.insert("end",f"▶  {cmd}\nLỆNH THỰC: {normalized}\nCHẾ ĐỘ: {mode}\n\n⏳ ĐANG THỰC THI...\n")
+        def w():
+            started=time.time()
+            try:
+                if mode=="ADB SHELL": rc,out=self.run(["-s",s,"shell","sh","-c",normalized],45)
+                else:
+                    import shlex
+                    parts=[x.strip('"') for x in shlex.split(normalized,posix=False)]
+                    if "-s" not in parts:parts=["-s",s]+parts
+                    rc,out=self.run(parts,45)
+                elapsed=time.time()-started
+                self.q.put(("panel_text","adb_out",f"▶  {cmd}\nLỆNH THỰC: {normalized}\nCHẾ ĐỘ: {mode}\nTHỜI GIAN: {elapsed:.1f} giây\nMÃ KẾT QUẢ: {rc}\n\n{out.strip() or 'Lệnh hoàn tất, không có dữ liệu trả về.'}"))
+            except Exception as e:self.q.put(("panel_text","adb_out",f"▶  {cmd}\nLỆNH THỰC: {normalized}\n\n❌ LỖI: {e}"))
+        threading.Thread(target=w,daemon=True).start()
+
+    def run_quick_adb(self,cmd):
+        self.adb_cmd.delete(0,"end");self.adb_cmd.insert(0,cmd);self.adb_cmd.config(fg="#f8fafc")
+        self.adb_mode.set("LỆNH ADB" if cmd in ("devices","get-state") else "ADB SHELL")
+        self.run_manual_adb()
+
+    # ---------- network / volte ----------
+    def volte_check(self):
+        def w():
+            cmds=[
+                ("Trạng thái SIM", "getprop gsm.sim.state"),
+                ("Nhà mạng", "getprop gsm.operator.alpha"),
+                ("Loại mạng", "getprop gsm.network.type"),
+                ("Mạng thoại", "getprop gsm.voice.network.type"),
+                ("Cờ VoLTE", "settings get global volte_vt_enabled"),
+                ("Cờ 4G nâng cao", "settings get global enhanced_4g_mode_enabled"),
+                ("Cờ Wi-Fi Calling", "settings get global wfc_ims_enabled"),
+                ("Cờ gọi Wi-Fi", "settings get global wifi_calling_enabled"),
+                ("Dịch vụ IMS", "service list | grep -iE 'ims|telephony|phone'"),
+            ]
+            out=["===== KIỂM TRA VoLTE / IMS =====\n"]
+            for label,c in cmds:
+                try:
+                    value=self.shell(c,6,log_output=False).strip()
+                    if not value:value="Không có dữ liệu"
+                    # Một số ROM Vivo trả trang trợ giúp cho 'settings get global'; báo rõ thay vì coi đó là lỗi toàn tool.
+                    if value.startswith("Settings provider (settings) commands:"):
+                        value="ROM này không hỗ trợ đọc mục này bằng lệnh settings chuẩn"
+                    out.append(f"{label}:\n{value}\n\n")
+                except Exception as e:
+                    out.append(f"{label}:\nKhông đọc được: {e}\n\n")
+            self.q.put(("panel_text", "volte_out", "".join(out)))
+        threading.Thread(target=w,daemon=True).start()
+
+    def ims_check(self):
+        def w():
+            cmds=[
+                ("Dịch vụ hệ thống", "service list | grep -iE 'ims|telephony|phone'", 8),
+                ("Gói IMS / nhà mạng", "pm list packages | grep -iE 'ims|carrier|telephony'", 8),
+                ("Trạng thái IMS", "dumpsys ims 2>&1", 8),
+                ("Trạng thái điện thoại", "dumpsys telephony.registry 2>&1", 8),
+            ]
+            out=["===== CHẨN ĐOÁN IMS CHUYÊN SÂU =====\n"]
+            for label,c,t in cmds:
+                try:
+                    value=self.shell(c,t,log_output=False).strip()
+                    if not value:value="Không có dữ liệu"
+                    out.append(f"### {label}\n{value}\n\n")
+                except Exception as e:
+                    out.append(f"### {label}\nKhông đọc được: {e}\n\n")
+            self.q.put(("panel_text", "volte_out", "".join(out)))
+        threading.Thread(target=w,daemon=True).start()
+
+    def volte_enable(self):
+        if not messagebox.askyesno("VoLTE", "Sao lưu trước và bật các cờ VoLTE phổ biến của Android?"):return
+        self.backup()
+        def w():
+            out=["===== BẬT CỜ VoLTE =====\n"]
+            for c in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1"]:
+                try:
+                    rc,o=self.run(["-s",self.serial(),"shell","sh","-c",c],8)
+                    out.append(f"$ {c}\n{o.strip() or ('Đã gửi lệnh' if rc==0 else 'Lệnh trả về mã '+str(rc))}\n\n")
+                except Exception as e:out.append(f"$ {c}\nLỖI: {e}\n\n")
+            self.q.put(("panel_text", "volte_out", "".join(out)))
+            self.q.put(("event_log", "[VoLTE] Đã thực hiện bật cờ VoLTE cơ bản."))
+        threading.Thread(target=w,daemon=True).start()
+
+    def oppo_volte_one_click(self):
+        """One-click VoLTE helper for OPPO/ColorOS legacy devices.
+        It only changes Android settings flags; it does not alter IMEI, SIM locks,
+        carrier locks, modem firmware, or protected carrier configuration.
+        """
+        if not messagebox.askyesno(
+            "ONE-CLICK OPPO VoLTE",
+            "Bật các cờ VoLTE/4G nâng cao phổ biến trên OPPO và khởi động lại máy?\n"
+            "Tool sẽ không thay đổi IMEI, SIM lock, carrier lock hay modem."
+        ):
+            return
+        self.backup()
+        def w():
+            cmds = [
+                "settings put global volte_vt_enabled 1",
+                "settings put global enhanced_4g_mode_enabled 1",
+                "settings put global volte_enabled 1",
+                "settings put global carrier_vt_enabled 1",
+            ]
+            out = ["===== ONE-CLICK OPPO VoLTE =====\n"]
+            for c in cmds:
+                try:
+                    rc, o = self.run(["-s", self.serial(), "shell", "sh", "-c", c], 8)
+                    out.append(f"$ {c}\n{o.strip() or ('OK' if rc == 0 else 'RC='+str(rc))}\n\n")
+                except Exception as e:
+                    out.append(f"$ {c}\nLỖI: {e}\n\n")
+            out.append("Đã gửi cấu hình. Khởi động lại để ROM tải lại cấu hình.\n\n")
+            self.q.put(("panel_text", "volte_out", "".join(out)))
+            self.q.put(("event_log", "[VoLTE] ONE-CLICK OPPO: đã áp dụng 4 cờ VoLTE và chuẩn bị reboot."))
+            try:
+                self.run(["-s", self.serial(), "reboot"], 5)
+                self.q.put(("event_log", "[VoLTE] OPPO đang khởi động lại."))
+            except Exception as e:
+                self.q.put(("event_log", f"[VoLTE] Không reboot tự động: {e}"))
+        threading.Thread(target=w, daemon=True).start()
+
+    def vendor_profile(self,vendor):
+        if vendor.lower() == "oppo":
+            return self.oppo_volte_one_click()
+        if not messagebox.askyesno("Cấu hình",f"Áp dụng cấu hình an toàn {vendor.upper()} (các cài đặt phổ biến)?\nKhông vượt khóa nhà mạng hoặc khóa SIM."):return
+        self.volte_enable()
+
+    # ---------- queue ----------
+    def _pump(self):
+        try:
+            while True:
+                x=self.q.get_nowait()
+                if x[0]=="devices":
+                    ds=x[1];self.devices=ds
+                    self.combo["values"]=[f"{a} ({b})" for a,b in ds]
+                    if ds:self.combo.current(0);self.log("[ADB] Thiết bị: "+str(ds))
+                elif x[0]=="panel_text":
+                    widget=getattr(self,x[1],None)
+                    if widget:
+                        widget.delete("1.0","end")
+                        widget.insert("end",x[2])
+                        widget.see("1.0")
+                elif x[0]=="panel_status":
+                    widget=getattr(self,x[1],None)
+                    if widget: widget.configure(text=x[2])
+                elif x[0]=="analysis_progress":
+                    self.info.insert("end", x[1] + "\n")
+                    self.info.see("end")
+                elif x[0]=="analysis_done":
+                    self.info.delete("1.0","end")
+                    self.info.insert("end",x[1])
+                    self.info.see("1.0")
+
+                elif x[0]=="analysis_fail":
+                    self.info.delete("1.0","end")
+                    self.info.insert("end","PHÂN TÍCH KHÔNG THÀNH CÔNG\n\n"+x[1])
+
+                elif x[0]=="analysis_busy":
+                    self.busy=x[1]
+                elif x[0]=="home_stats":
+                    self.home_android.value_label.configure(text=x[1])
+                    self.home_soc.value_label.configure(text=x[2])
+                elif x[0]=="online_doc":
+                    self.doc_view.delete("1.0","end"); self.doc_view.insert("end",f"URL: {x[1]}\n\n{x[2]}"); self.doc_view.see("1.0"); self.online_status.configure(text="Đã tải xong tài liệu trực tuyến.")
+                elif x[0]=="online_error":
+                    self.doc_view.delete("1.0","end"); self.doc_view.insert("end",f"KHÔNG TẢI ĐƯỢC TÀI LIỆU\n\n{x[1]}\n\nLỗi: {x[2]}\n\nBạn có thể bấm 'MỞ TRÌNH DUYỆT' hoặc dùng KHO KIẾN THỨC offline."); self.online_status.configure(text="Không tải được tài liệu.")
+                elif x[0]=="event_log":self.log(x[1])
+                elif x[0]=="err":self.log("[LỖI] "+x[1])
+        except queue.Empty:pass
+        self.root.after(100,self._pump)
+
+    def log(self,t):
+        try:
+            self.logbox.insert("end",t+"\n\n");self.logbox.see("end")
+        except: pass
+
+def shlex_quote(s):
+    # simple shell quoting for remote Android sh
+    return "'" + str(s).replace("'","'\\''") + "'"
+
+if __name__=="__main__":
+    root=tk.Tk()
+    AndroidTool(root)
+    root.mainloop()
