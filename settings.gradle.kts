@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "AppleSeedIMS"
 include(":app")
+include(":volteapp")
