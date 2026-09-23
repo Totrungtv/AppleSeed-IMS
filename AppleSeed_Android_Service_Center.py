@@ -437,41 +437,42 @@ class AndroidTool(QMainWindow):
         apk=self.base/"apps"/"AppleSeed_VoLTE.apk"
         if not apk.exists():
             QMessageBox.warning(self,"APK","Thiếu apps/AppleSeed_VoLTE.apk");return
-        if not self.ask("CÀI APP VoLTE","Android báo INSTALL_FAILED_VERIFICATION_FAILURE. Cho phép ADB cài APK bằng cách tạm tắt kiểm tra APK, sau đó tool sẽ khôi phục cài đặt?"):
-            return
         def w():
             out=["===== CÀI APP VoLTE ====="]
             try:
-                # ColorOS/Android 8 có thể chặn ADB install bởi Package Verifier.
-                keys=["package_verifier_enable","verifier_verify_adb_installs"]
-                oldvals={}
-                for k in keys:
-                    rc,v=self.run(["-s",self.serial,"shell","settings","get","global",k],8)
-                    oldvals[k]=v.strip() if rc==0 else "null"
-                out.append("VERIFIER TRƯỚC: "+str(oldvals))
-                for k in keys:
-                    rc,v=self.run(["-s",self.serial,"shell","settings","put","global",k,"0"],8)
-                    out.append(f"DISABLE {k}: rc={rc} {v}".strip())
-                rc,o=self.run(["-s",self.serial,"install","-r","-d","--no-streaming",str(apk)],90)
+                # Trên Android 8/ColorOS, shell ADB không được phép sửa Global Settings
+                # nếu chưa có WRITE_SECURE_SETTINGS. Không cố ép quyền; hướng dẫn người dùng
+                # tắt Verify apps over USB trong Developer options.
+                self._volte_progress(10,"Kiểm tra APK")
+                rc,o=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
+                out.append("PACKAGE TRƯỚC: "+(o.strip() or "chưa cài"))
+                self._volte_progress(30,"Cài APK qua ADB")
+                rc,o=self.run(["-s",self.serial,"install","-r","-d","-t",str(apk)],90)
                 out.append(f"INSTALL rc={rc}\n{o}")
-                if rc!=0:
-                    rc2,o2=self.run(["-s",self.serial,"install","-r","-d",str(apk)],90)
-                    out.append(f"INSTALL RETRY rc={rc2}\n{o2}")
-                    rc=rc2
-                if rc==0:
-                    rg,og=self.run(["-s",self.serial,"shell","pm","grant","vn.appleseed.volte","android.permission.WRITE_SECURE_SETTINGS"],15)
-                    out.append(f"GRANT WRITE_SECURE_SETTINGS rc={rg}\n{og}")
-                    rv,ov=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
-                    out.append(f"VERIFY PACKAGE rc={rv}\n{ov}")
+                if rc!=0 and "INSTALL_FAILED_VERIFICATION_FAILURE" in o:
+                    out.append("\n⚠️ COLOROS CHẶN XÁC MINH APK")
+                    out.append("ADB shell không có WRITE_SECURE_SETTINGS nên tool không thể tự tắt Verify apps over USB.")
+                    out.append("Hãy tắt: Cài đặt → Tùy chọn nhà phát triển → Verify apps over USB / Xác minh ứng dụng qua USB.")
+                    out.append("Nếu OPPO có 'Install via USB/Cài đặt qua USB', hãy bật luôn.")
+                    self.post(lambda:QMessageBox.warning(self,"OPPO chặn cài APK",
+                        "Máy đang bật Verify apps over USB.\n\n"
+                        "Vào Tùy chọn nhà phát triển → tắt 'Verify apps over USB' "
+                        "và bật 'Install via USB' nếu OPPO có.\n\n"
+                        "Sau đó bấm CÀI APP VoLTE lại."))
+                    # Mở thẳng Developer Options để khỏi phải mò menu.
+                    self.run(["-s",self.serial,"shell","am","start","-a","android.settings.APPLICATION_DEVELOPMENT_SETTINGS"],10)
                 else:
-                    out.append("GỢI Ý: Nếu vẫn VERIFICATION_FAILURE, kiểm tra Play Protect/nguồn cài APK trên máy.")
-            finally:
-                for k,v in oldvals.items():
-                    if v and v not in ("null","NULL","None"):
-                        self.run(["-s",self.serial,"shell","settings","put","global",k,v],8)
-                out.append("VERIFIER SAU: đã khôi phục cài đặt trước đó.")
-                self.showout(self.volte_out,"CÀI APP VoLTE","\n\n".join(out))
+                    if rc==0:
+                        rg,og=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
+                        out.append(f"VERIFY PACKAGE rc={rg}\n{og}")
+                        if rg==0:
+                            self.post(lambda:QMessageBox.information(self,"Cài APK","✅ Apple Seed VoLTE đã cài thành công."))
+            except Exception as e:
+                out.append("LỖI: "+str(e))
+            self._volte_progress(100,"Hoàn tất cài APK")
+            self.showout(self.volte_out,"CÀI APP VoLTE","\n\n".join(out))
         self.threaded(w)
+
     def open_volte_app(self):
         if not self.require():return
         def w():
