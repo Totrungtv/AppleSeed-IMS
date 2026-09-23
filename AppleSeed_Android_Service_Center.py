@@ -438,39 +438,44 @@ class AndroidTool(QMainWindow):
         if not apk.exists():
             QMessageBox.warning(self,"APK","Thiếu apps/AppleSeed_VoLTE.apk");return
         def w():
-            out=["===== CÀI APP VoLTE ====="]
+            out=["===== CÀI APP VoLTE — CHẾ ĐỘ OPPO/COLOROS ====="]
+            remote="/sdcard/AppleSeed_VoLTE.apk"
             try:
-                # Trên Android 8/ColorOS, shell ADB không được phép sửa Global Settings
-                # nếu chưa có WRITE_SECURE_SETTINGS. Không cố ép quyền; hướng dẫn người dùng
-                # tắt Verify apps over USB trong Developer options.
-                self._volte_progress(10,"Kiểm tra APK")
-                rc,o=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
-                out.append("PACKAGE TRƯỚC: "+(o.strip() or "chưa cài"))
-                self._volte_progress(30,"Cài APK qua ADB")
-                rc,o=self.run(["-s",self.serial,"install","-r","-d","-t",str(apk)],90)
-                out.append(f"INSTALL rc={rc}\n{o}")
-                if rc!=0 and "INSTALL_FAILED_VERIFICATION_FAILURE" in o:
-                    out.append("\n⚠️ COLOROS CHẶN XÁC MINH APK")
-                    out.append("ADB shell không có WRITE_SECURE_SETTINGS nên tool không thể tự tắt Verify apps over USB.")
-                    out.append("Hãy tắt: Cài đặt → Tùy chọn nhà phát triển → Verify apps over USB / Xác minh ứng dụng qua USB.")
-                    out.append("Nếu OPPO có 'Install via USB/Cài đặt qua USB', hãy bật luôn.")
-                    self.post(lambda:QMessageBox.warning(self,"OPPO chặn cài APK",
-                        "Máy đang bật Verify apps over USB.\n\n"
-                        "Vào Tùy chọn nhà phát triển → tắt 'Verify apps over USB' "
-                        "và bật 'Install via USB' nếu OPPO có.\n\n"
-                        "Sau đó bấm CÀI APP VoLTE lại."))
-                    # Mở thẳng Developer Options để khỏi phải mò menu.
-                    self.run(["-s",self.serial,"shell","am","start","-a","android.settings.APPLICATION_DEVELOPMENT_SETTINGS"],10)
-                else:
-                    if rc==0:
-                        rg,og=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
-                        out.append(f"VERIFY PACKAGE rc={rg}\n{og}")
-                        if rg==0:
-                            self.post(lambda:QMessageBox.information(self,"Cài APK","✅ Apple Seed VoLTE đã cài thành công."))
+                # OPPO/ColorOS có thể tự bật lại Verify apps over USB khi dùng
+                # "adb install". Vì vậy với APP VoLTE, ưu tiên đường cài như người
+                # dùng mở APK trên điện thoại: push APK -> mở Package Installer.
+                self._volte_progress(10,"Chuẩn bị APK")
+                self._volte_progress(30,"Đưa APK vào điện thoại")
+                rc,o=self.run(["-s",self.serial,"push",str(apk),remote],60)
+                out.append(f"PUSH rc={rc}\\n{o}")
+                if rc!=0:
+                    raise RuntimeError(o or "ADB push thất bại")
+
+                self._volte_progress(65,"Mở trình cài APK của Android")
+                rc,o=self.run([
+                    "-s",self.serial,"shell","am","start",
+                    "-a","android.intent.action.VIEW",
+                    "-d","file:///sdcard/AppleSeed_VoLTE.apk",
+                    "-t","application/vnd.android.package-archive"
+                ],15)
+                out.append(f"PACKAGE INSTALLER rc={rc}\\n{o}")
+                out.append("\\nĐã mở trình cài APK trên điện thoại.")
+                out.append("Không dùng 'adb install', nên không kích hoạt lại đường xác minh APK qua USB.")
+                out.append("Nếu Android hỏi cho phép cài nguồn này, bấm Cài đặt/Cho phép rồi hoàn tất.")
+
+                self.post(lambda:QMessageBox.information(
+                    self,"Apple Seed VoLTE",
+                    "Đã đưa APK lên điện thoại và mở trình cài.\\n\\n"
+                    "👉 Cài trực tiếp trên điện thoại.\\n"
+                    "Tool không dùng 'adb install' để tránh OPPO tự bật lại Verify apps over USB."
+                ))
             except Exception as e:
                 out.append("LỖI: "+str(e))
-            self._volte_progress(100,"Hoàn tất cài APK")
-            self.showout(self.volte_out,"CÀI APP VoLTE","\n\n".join(out))
+                self.post(lambda:QMessageBox.warning(self,"Cài APK lỗi",str(e)))
+            finally:
+                self._volte_progress(100,"Hoàn tất bước mở trình cài")
+                self.showout(self.volte_out,"CÀI APP VoLTE","\\n\\n".join(out))
+                self.log("VoLTE APK: push + mở Package Installer.")
         self.threaded(w)
 
     def open_volte_app(self):
