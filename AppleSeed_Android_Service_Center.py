@@ -324,13 +324,33 @@ class AndroidTool(QMainWindow):
             except Exception as e:self.showout(self.diag_out,title,"LỖI: "+str(e))
         self.threaded(w)
 
+    def _volte_progress(self,value,text):
+        self.post(lambda value=value,text=text: (self.progress.setRange(0,100), self.progress.setValue(value), self.status.showMessage(f"⏳ {text}")))
+
     def volte_check(self):
         if not self.require():return
         def w():
             out=[]
-            for a,c in [("SIM","getprop gsm.sim.state"),("NHÀ MẠNG","getprop gsm.operator.alpha"),("LTE","getprop gsm.network.type"),("VOICE","getprop gsm.voice.network.type"),("VOLTE FLAG","settings get global volte_vt_enabled"),("ENHANCED 4G","settings get global enhanced_4g_mode_enabled"),("IMS","dumpsys ims 2>&1")]:
-                try:out.append(f"[{a}]\n{self.shell(c,15) or '—'}")
-                except Exception as e:out.append(f"[{a}]\nERROR: {e}")
+            checks=[
+                ("SIM","getprop gsm.sim.state",5),
+                ("NHÀ MẠNG","getprop gsm.operator.alpha",20),
+                ("LTE","getprop gsm.network.type",35),
+                ("VOICE","getprop gsm.voice.network.type",50),
+                ("VOLTE FLAG","settings get global volte_vt_enabled",65),
+                ("ENHANCED 4G","settings get global enhanced_4g_mode_enabled",80),
+            ]
+            for a,cmd,p in checks:
+                self._volte_progress(p,"Kiểm tra "+a)
+                try: out.append(f"[{a}]\n{self.shell(cmd,8).strip() or '—'}")
+                except Exception as e: out.append(f"[{a}]\nERROR: {e}")
+            # dumpsys ims có thể treo trên một số ColorOS/Android 8. Không để nó khóa toàn bộ bài test.
+            self._volte_progress(90,"Kiểm tra IMS (tối đa 5 giây)")
+            try:
+                ims=self.shell("dumpsys ims",5).strip()
+                out.append("[IMS]\n"+(ims[:6000] if ims else "Không trả dữ liệu"))
+            except Exception as e:
+                out.append("[IMS]\nKHÔNG PHẢN HỒI / KHÔNG HỖ TRỢ: "+str(e))
+            self._volte_progress(100,"Hoàn tất kiểm tra VoLTE")
             self.showout(self.volte_out,"KIỂM TRA VoLTE / IMS","\n\n".join(out))
         self.threaded(w)
 
@@ -338,9 +358,21 @@ class AndroidTool(QMainWindow):
         if not self.require():return
         def w():
             out=[]
-            for a,c in [("SERVICE","service list | grep -iE 'ims|telephony|phone'"),("PACKAGES","pm list packages | grep -iE 'ims|carrier|telephony'"),("IMS","dumpsys ims 2>&1"),("TELEPHONY","dumpsys telephony.registry 2>&1")]:
-                try:out.append(f"### {a}\n{self.shell(c,20)}")
-                except Exception as e:out.append(f"### {a}\nERROR: {e}")
+            checks=[
+                ("SERVICE","service list | grep -iE 'ims|telephony|phone'",20),
+                ("PACKAGES","pm list packages | grep -iE 'ims|carrier|telephony'",40),
+            ]
+            for a,cmd,p in checks:
+                self._volte_progress(p,"Kiểm tra "+a)
+                try: out.append(f"### {a}\n{self.shell(cmd,10).strip()}")
+                except Exception as e: out.append(f"### {a}\nERROR: {e}")
+            self._volte_progress(60,"Kiểm tra IMS (tối đa 5 giây)")
+            try: out.append("### IMS\n"+self.shell("dumpsys ims",5)[:6000])
+            except Exception as e: out.append("### IMS\nKHÔNG PHẢN HỒI / KHÔNG HỖ TRỢ: "+str(e))
+            self._volte_progress(80,"Kiểm tra Telephony Registry (tối đa 10 giây)")
+            try: out.append("### TELEPHONY\n"+self.shell("dumpsys telephony.registry",10)[:6000])
+            except Exception as e: out.append("### TELEPHONY\nERROR: "+str(e))
+            self._volte_progress(100,"Hoàn tất IMS")
             self.showout(self.volte_out,"IMS CHUYÊN SÂU","\n\n".join(out))
         self.threaded(w)
 
@@ -362,8 +394,8 @@ class AndroidTool(QMainWindow):
                         if rc==0:break
                 for c in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
                     rc,o=self.run(["-s",self.serial,"shell","sh","-c",c],8);out.append(f"\n{c}\nrc={rc}\n{o}")
-                for a,c in [("MODEL","getprop ro.product.model"),("ANDROID","getprop ro.build.version.release"),("CARRIER CONFIG","dumpsys carrier_config"),("IMS","dumpsys ims 2>&1")]:
-                    rc,o=self.run(["-s",self.serial,"shell","sh","-c",c],20)
+                for a,c in [("MODEL","getprop ro.product.model"),("ANDROID","getprop ro.build.version.release"),("CARRIER CONFIG","dumpsys carrier_config"),("IMS","dumpsys ims")]:
+                    rc,o=self.run(["-s",self.serial,"shell","sh","-c",c],8)
                     if a=="CARRIER CONFIG":
                         o="\n".join(x for x in o.splitlines() if any(k in x.lower() for k in ["carrier_volte","carrier_vt_","enhanced_4g","hide_enhanced","show_4g"])) or o[:5000]
                     out.append(f"\n--- {a} rc={rc} ---\n{o[:7000]}")
