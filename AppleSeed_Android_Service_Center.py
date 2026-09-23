@@ -435,57 +435,56 @@ class AndroidTool(QMainWindow):
                             "Mở thư mục AppleSeed/APK trên điện thoại và bấm AppleSeed_VoLTE.apk → Cài đặt, rồi chạy lại 1-CLICK."
                         )
                     out.append("\n--- APK ĐÃ CÀI THÀNH CÔNG ---")
-                else:
-                    try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8")
-                    except Exception as e: out.append("BACKUP: bỏ qua - "+str(e))
-                    self._volte_progress(18,"Đưa Native VoLTE runner vào máy")
-                    rc,o=self.run(["-s",self.serial,"push",str(dex),remote],30);out.append(f"PUSH DEX rc={rc}\n{o}")
-                    if rc==0:
-                        for proc in ("app_process64","app_process"):
-                            self._volte_progress(30,"Chạy Native CarrierConfig ("+proc+")")
-                            rc,o=self.run(["-s",self.serial,"shell",proc,"-Djava.class.path="+remote,"/system/bin","com.hbg.volte.VolteFixer","ENABLE"],25)
-                            out.append(f"{proc} rc={rc}\n{o}")
-                            if rc==0:break
-                    self._volte_progress(55,"Áp dụng VoLTE flags bằng ADB shell")
-                    for cmd in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
-                        try:
-                            rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],8)
-                            out.append(f"\n{cmd}\nrc={rc}\n{o}")
-                        except Exception as e: out.append(f"\n{cmd}\nTIMEOUT/ERROR: {e}")
-                    self._volte_progress(68,"Đọc lại 4 cờ VoLTE")
-                    for key in ["volte_vt_enabled","enhanced_4g_mode_enabled","volte_enabled","carrier_vt_enabled"]:
-                        try:
-                            rc,o=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
-                            out.append(f"\nVERIFY {key} rc={rc}: {o.strip() or '—'}")
-                        except Exception as e: out.append(f"\nVERIFY {key}: ERROR {e}")
-                    self._volte_progress(74,"Mở Apple Seed VoLTE")
+                try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8")
+                except Exception as e: out.append("BACKUP: bỏ qua - "+str(e))
+                self._volte_progress(18,"Đưa Native VoLTE runner vào máy")
+                rc,o=self.run(["-s",self.serial,"push",str(dex),remote],30);out.append(f"PUSH DEX rc={rc}\n{o}")
+                if rc==0:
+                    for proc in ("app_process64","app_process"):
+                        self._volte_progress(30,"Chạy Native CarrierConfig ("+proc+")")
+                        rc,o=self.run(["-s",self.serial,"shell",proc,"-Djava.class.path="+remote,"/system/bin","com.hbg.volte.VolteFixer","ENABLE"],25)
+                        out.append(f"{proc} rc={rc}\n{o}")
+                        if rc==0:break
+                self._volte_progress(55,"Áp dụng VoLTE flags bằng ADB shell")
+                for cmd in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
                     try:
-                        rc,o=self.run(["-s",self.serial,"shell","monkey","-p","vn.appleseed.volte","1"],15)
-                        out.append(f"\n--- OPEN APP rc={rc} ---\n{o}")
-                    except Exception as e:
-                        out.append(f"\n--- OPEN APP ---\nERROR: {e}")
-                    self._volte_progress(78,"Đọc trạng thái thiết bị")
-                    for a,cmd,t in [("MODEL","getprop ro.product.model",5),("ANDROID","getprop ro.build.version.release",5)]:
-                        try:
-                            rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],t);out.append(f"\n--- {a} rc={rc} ---\n{o}")
-                        except Exception as e:out.append(f"\n--- {a} ---\nERROR: {e}")
-                    # Một số ColorOS treo dumpsys carrier_config/ims. Đây chỉ là bước VERIFY,
-                    # không được phép làm Native 1-Click báo lỗi toàn bộ.
-                    self._volte_progress(82,"Xác minh CarrierConfig (tối đa 3 giây)")
+                        rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],8)
+                        out.append(f"\n{cmd}\nrc={rc}\n{o}")
+                    except Exception as e: out.append(f"\n{cmd}\nTIMEOUT/ERROR: {e}")
+                self._volte_progress(68,"Đọc lại 4 cờ VoLTE")
+                for key in ["volte_vt_enabled","enhanced_4g_mode_enabled","volte_enabled","carrier_vt_enabled"]:
                     try:
-                        rc,o=self.run(["-s",self.serial,"shell","dumpsys","carrier_config"],4)
-                        filt="\n".join(x for x in o.splitlines() if any(k in x.lower() for k in ["carrier_volte","carrier_vt_","enhanced_4g","hide_enhanced","show_4g"]))
-                        out.append(f"\n--- CARRIER CONFIG rc={rc} ---\n{filt[:7000] if filt else o[:3000]}")
-                    except Exception as e:
-                        out.append("\n--- CARRIER CONFIG ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
-                    self._volte_progress(92,"Xác minh IMS (tối đa 3 giây)")
+                        rc,o=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
+                        out.append(f"\nVERIFY {key} rc={rc}: {o.strip() or '—'}")
+                    except Exception as e: out.append(f"\nVERIFY {key}: ERROR {e}")
+                self._volte_progress(74,"Mở Apple Seed VoLTE")
+                try:
+                    rc,o=self.run(["-s",self.serial,"shell","monkey","-p","vn.appleseed.volte","1"],15)
+                    out.append(f"\n--- OPEN APP rc={rc} ---\n{o}")
+                except Exception as e:
+                    out.append(f"\n--- OPEN APP ---\nERROR: {e}")
+                self._volte_progress(78,"Đọc trạng thái thiết bị")
+                for a,cmd,t in [("MODEL","getprop ro.product.model",5),("ANDROID","getprop ro.build.version.release",5)]:
                     try:
-                        rc,o=self.run(["-s",self.serial,"shell","dumpsys","ims"],4)
-                        out.append(f"\n--- IMS rc={rc} ---\n{o[:5000]}")
-                    except Exception as e:
-                        out.append("\n--- IMS ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
-                    self._volte_progress(100,"Native VoLTE 1-Click hoàn tất")
-                    out.append("\n===== KẾT LUẬN =====\n1-CLICK đã hoàn thành chuỗi CÀI APK → ADB FLAGS → MỞ APP. WRITE_SECURE_SETTINGS không cần cấp cho APK.")
+                        rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],t);out.append(f"\n--- {a} rc={rc} ---\n{o}")
+                    except Exception as e:out.append(f"\n--- {a} ---\nERROR: {e}")
+                # Một số ColorOS treo dumpsys carrier_config/ims. Đây chỉ là bước VERIFY,
+                # không được phép làm Native 1-Click báo lỗi toàn bộ.
+                self._volte_progress(82,"Xác minh CarrierConfig (tối đa 3 giây)")
+                try:
+                    rc,o=self.run(["-s",self.serial,"shell","dumpsys","carrier_config"],4)
+                    filt="\n".join(x for x in o.splitlines() if any(k in x.lower() for k in ["carrier_volte","carrier_vt_","enhanced_4g","hide_enhanced","show_4g"]))
+                    out.append(f"\n--- CARRIER CONFIG rc={rc} ---\n{filt[:7000] if filt else o[:3000]}")
+                except Exception as e:
+                    out.append("\n--- CARRIER CONFIG ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
+                self._volte_progress(92,"Xác minh IMS (tối đa 3 giây)")
+                try:
+                    rc,o=self.run(["-s",self.serial,"shell","dumpsys","ims"],4)
+                    out.append(f"\n--- IMS rc={rc} ---\n{o[:5000]}")
+                except Exception as e:
+                    out.append("\n--- IMS ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
+                self._volte_progress(100,"Native VoLTE 1-Click hoàn tất")
+                out.append("\n===== KẾT LUẬN =====\n1-CLICK đã hoàn thành chuỗi CÀI APK → ADB FLAGS → MỞ APP. WRITE_SECURE_SETTINGS không cần cấp cho APK.")
             except Exception as e:
                 out.append("\nLỖI THỰC THI: "+str(e))
             finally:
