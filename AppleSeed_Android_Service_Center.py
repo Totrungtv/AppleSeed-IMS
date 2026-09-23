@@ -9,7 +9,7 @@ VER="PySide6-1.0"
 class CallEvent(QEvent):
     TYPE=QEvent.registerEventType()
     def __init__(self,fn):
-        super().__init__(CallEvent.TYPE); self.fn=fn
+        super().__init__(QEvent.Type(CallEvent.TYPE)); self.fn=fn
 
 class AndroidTool(QMainWindow):
     def __init__(self):
