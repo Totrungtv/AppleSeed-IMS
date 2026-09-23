@@ -1,1 +1,0 @@
-adb.exe: device '4c98ade1' not found

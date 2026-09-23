@@ -4,8 +4,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-APP = "Apple Seed Android Service Tool VIP"
-VER = "6.1.3"
+APP = "Apple Seed Android Service Tool"
+VER = "CLEAN-1CLICK"
 
 class AndroidTool:
     def __init__(self, root):
@@ -358,6 +358,7 @@ class AndroidTool:
         p=self._panel(self.tab_volte,"DỊCH VỤ VoLTE / IMS")
         grid=tk.Frame(p,bg="#111827");grid.pack(fill="x",padx=10,pady=8)
         for i,(t,c,bg) in enumerate([
+            ("⚡ KÍCH HOẠT VoLTE TỰ ĐỘNG 1-CLICK",self.oppo_native_one_click,"#dc2626"),
             ("KIỂM TRA VoLTE THÔNG MINH",self.volte_check,"#2563eb"),
             ("KIỂM TRA IMS CHUYÊN SÂU",self.ims_check,"#7c3aed"),
             ("BẬT CỜ VoLTE CƠ BẢN",self.volte_enable,"#16a34a"),
@@ -1069,6 +1070,74 @@ class AndroidTool:
                 self.q.put(("event_log", "[VoLTE] OPPO đang khởi động lại."))
             except Exception as e:
                 self.q.put(("event_log", f"[VoLTE] Không reboot tự động: {e}"))
+        threading.Thread(target=w, daemon=True).start()
+
+    def oppo_native_one_click(self):
+        """HBG-style native CarrierConfig test runner + legacy VoLTE flags."""
+        serial = self.serial()
+        if not serial:
+            messagebox.showwarning("VoLTE 1-CLICK", "Chưa chọn thiết bị ADB.")
+            return
+        dex = self.base / "assets" / "hbg_volte_fixer.dex"
+        if not dex.exists():
+            messagebox.showerror("VoLTE 1-CLICK", "Thiếu assets/hbg_volte_fixer.dex.")
+            return
+        if not messagebox.askyesno(
+            "VoLTE 1-CLICK",
+            "Chạy native CarrierConfig runner trên thiết bị?\\n"
+            "Sau đó tool sẽ áp dụng fallback VoLTE flags và đọc lại IMS/CarrierConfig."
+        ):
+            return
+        self.backup()
+        def w():
+            out = ["===== APPLE SEED VoLTE NATIVE 1-CLICK =====\\n"]
+            def add(title, rc, text):
+                out.append(f"{title}: rc={rc}\\n{text.strip()}\\n\\n")
+            try:
+                rc, o = self.run(["-s", serial, "get-state"], 8)
+                add("ADB STATE", rc, o)
+                if rc != 0:
+                    self.q.put(("panel_text", "volte_out", "".join(out)))
+                    return
+                rc, o = self.run(["-s", serial, "shell", "getprop", "ro.product.model"], 8)
+                add("MODEL", rc, o)
+                rc, o = self.run(["-s", serial, "shell", "getprop", "ro.build.version.release"], 8)
+                add("ANDROID", rc, o)
+                remote = "/data/local/tmp/hbg_volte_fixer.dex"
+                rc, o = self.run(["-s", serial, "push", str(dex), remote], 30)
+                add("PUSH NATIVE RUNNER", rc, o)
+                if rc == 0:
+                    cmd = ["-s", serial, "shell", "app_process64",
+                           "-Djava.class.path=" + remote, "/system/bin",
+                           "com.hbg.volte.VolteFixer", "ENABLE"]
+                    rc, o = self.run(cmd, 20)
+                    add("NATIVE RUNNER app_process64", rc, o)
+                    if rc != 0:
+                        cmd[4] = "app_process"
+                        rc, o = self.run(cmd, 20)
+                        add("NATIVE RUNNER app_process", rc, o)
+                for c in [
+                    "settings put global volte_vt_enabled 1",
+                    "settings put global enhanced_4g_mode_enabled 1",
+                    "settings put global volte_enabled 1",
+                    "settings put global carrier_vt_enabled 1",
+                ]:
+                    rc, o = self.run(["-s", serial, "shell", "sh", "-c", c], 8)
+                    add("FALLBACK " + c, rc, o)
+                rc, o = self.run(["-s", serial, "shell", "dumpsys", "carrier_config"], 15)
+                lines = [x for x in o.splitlines() if any(k in x.lower() for k in [
+                    "carrier_volte_available_bool","carrier_volte_provisioned_bool",
+                    "carrier_vt_available_bool","editable_enhanced_4g_lte_bool",
+                    "hide_enhanced_4g_lte_bool","show_4g_for_lte_data_icon_bool"])]
+                add("CARRIER CONFIG", rc, "\\n".join(lines) if lines else o[:4000])
+                rc, o = self.run(["-s", serial, "shell", "dumpsys", "ims"], 15)
+                add("IMS", rc, o[:6000])
+                self.run(["-s", serial, "shell", "rm", "-f", remote], 8)
+                self.q.put(("panel_text", "volte_out", "".join(out)))
+                self.q.put(("event_log", "[VoLTE] Native 1-CLICK đã chạy xong; xem log để xác định IMS."))
+            except Exception as e:
+                out.append("EXCEPTION: " + str(e) + "\\n")
+                self.q.put(("panel_text", "volte_out", "".join(out)))
         threading.Thread(target=w, daemon=True).start()
 
     def install_volte_app(self):
