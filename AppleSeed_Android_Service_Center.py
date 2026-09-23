@@ -383,24 +383,53 @@ class AndroidTool(QMainWindow):
         if not self.ask("VoLTE 1-CLICK","Chạy native CarrierConfig + fallback flags + kiểm tra IMS?"):return
         def w():
             out=["===== APPLE SEED NATIVE VoLTE 1-CLICK ====="]
+            remote="/data/local/tmp/hbg_volte_fixer.dex"
             try:
                 folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}";folder.mkdir(parents=True,exist_ok=True)
                 try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8")
-                except:pass
-                remote="/data/local/tmp/hbg_volte_fixer.dex";rc,o=self.run(["-s",self.serial,"push",str(dex),remote],30);out.append(f"PUSH DEX rc={rc}\n{o}")
+                except Exception as e: out.append("BACKUP: bỏ qua - "+str(e))
+                self._volte_progress(10,"Đưa Native VoLTE runner vào máy")
+                rc,o=self.run(["-s",self.serial,"push",str(dex),remote],30);out.append(f"PUSH DEX rc={rc}\n{o}")
                 if rc==0:
                     for proc in ("app_process64","app_process"):
-                        rc,o=self.run(["-s",self.serial,"shell",proc,"-Djava.class.path="+remote,"/system/bin","com.hbg.volte.VolteFixer","ENABLE"],25);out.append(f"{proc} rc={rc}\n{o}")
+                        self._volte_progress(30,"Chạy Native CarrierConfig ("+proc+")")
+                        rc,o=self.run(["-s",self.serial,"shell",proc,"-Djava.class.path="+remote,"/system/bin","com.hbg.volte.VolteFixer","ENABLE"],25)
+                        out.append(f"{proc} rc={rc}\n{o}")
                         if rc==0:break
-                for c in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
-                    rc,o=self.run(["-s",self.serial,"shell","sh","-c",c],8);out.append(f"\n{c}\nrc={rc}\n{o}")
-                for a,c in [("MODEL","getprop ro.product.model"),("ANDROID","getprop ro.build.version.release"),("CARRIER CONFIG","dumpsys carrier_config"),("IMS","dumpsys ims")]:
-                    rc,o=self.run(["-s",self.serial,"shell","sh","-c",c],8)
-                    if a=="CARRIER CONFIG":
-                        o="\n".join(x for x in o.splitlines() if any(k in x.lower() for k in ["carrier_volte","carrier_vt_","enhanced_4g","hide_enhanced","show_4g"])) or o[:5000]
-                    out.append(f"\n--- {a} rc={rc} ---\n{o[:7000]}")
-                self.run(["-s",self.serial,"shell","rm","-f",remote],8);self.showout(self.volte_out,"NATIVE 1-CLICK","\n".join(out));self.log("VoLTE Native 1-Click hoàn tất.")
-            except Exception as e:self.showout(self.volte_out,"NATIVE 1-CLICK","LỖI: "+str(e))
+                self._volte_progress(55,"Áp dụng VoLTE flags")
+                for cmd in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
+                    try:
+                        rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],8)
+                        out.append(f"\n{cmd}\nrc={rc}\n{o}")
+                    except Exception as e: out.append(f"\n{cmd}\nTIMEOUT/ERROR: {e}")
+                self._volte_progress(70,"Đọc trạng thái thiết bị")
+                for a,cmd,t in [("MODEL","getprop ro.product.model",5),("ANDROID","getprop ro.build.version.release",5)]:
+                    try:
+                        rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],t);out.append(f"\n--- {a} rc={rc} ---\n{o}")
+                    except Exception as e:out.append(f"\n--- {a} ---\nERROR: {e}")
+                # Một số ColorOS treo dumpsys carrier_config/ims. Đây chỉ là bước VERIFY,
+                # không được phép làm Native 1-Click báo lỗi toàn bộ.
+                self._volte_progress(82,"Xác minh CarrierConfig (tối đa 3 giây)")
+                try:
+                    rc,o=self.run(["-s",self.serial,"shell","dumpsys","carrier_config"],4)
+                    filt="\n".join(x for x in o.splitlines() if any(k in x.lower() for k in ["carrier_volte","carrier_vt_","enhanced_4g","hide_enhanced","show_4g"]))
+                    out.append(f"\n--- CARRIER CONFIG rc={rc} ---\n{filt[:7000] if filt else o[:3000]}")
+                except Exception as e:
+                    out.append("\n--- CARRIER CONFIG ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
+                self._volte_progress(92,"Xác minh IMS (tối đa 3 giây)")
+                try:
+                    rc,o=self.run(["-s",self.serial,"shell","dumpsys","ims"],4)
+                    out.append(f"\n--- IMS rc={rc} ---\n{o[:5000]}")
+                except Exception as e:
+                    out.append("\n--- IMS ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
+                self._volte_progress(100,"Native VoLTE 1-Click hoàn tất")
+                out.append("\n===== KẾT LUẬN =====\nNative runner/fallback đã chạy; CarrierConfig/IMS timeout chỉ là bước xác minh.")
+            except Exception as e:
+                out.append("\nLỖI THỰC THI: "+str(e))
+            finally:
+                try:self.run(["-s",self.serial,"shell","rm","-f",remote],8)
+                except:pass
+                self.showout(self.volte_out,"NATIVE 1-CLICK","\n".join(out));self.log("VoLTE Native 1-Click hoàn tất.")
         self.threaded(w)
 
     def install_volte_app(self):
