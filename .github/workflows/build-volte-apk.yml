@@ -30,5 +30,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AppleSeed-VoLTE-APK
-          path: volteapp/build/outputs/apk/release/volteapp-release.apk
+          path: volteapp/build/outputs/apk/release/*.apk
           if-no-files-found: error
