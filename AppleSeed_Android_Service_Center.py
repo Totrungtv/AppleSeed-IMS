@@ -118,7 +118,7 @@ class AndroidTool(QMainWindow):
         t=QLabel("BẢNG ĐIỀU KHIỂN"); t.setStyleSheet("font-size:21pt;font-weight:800"); l.addWidget(t)
         row=QHBoxLayout(); self.cards=[]
         for title,val in [("THIẾT BỊ","—"),("ANDROID","—"),("SOC","—"),("ADB","—")]:
-            f=QFrame(); f.setObjectName("card"); q=QVBoxLayout(f); q.addWidget(QLabel(title,objectName="muted")); v=QLabel(val); v.setStyleSheet("font-size:15pt;font-weight:800;color:#38bdf8"); q.addWidget(v); f.val=v; self.cards.append(f); row.addWidget(f)
+            f=QFrame(); f.setObjectName("card"); q=QVBoxLayout(f); lab=QLabel(title); lab.setObjectName("muted"); q.addWidget(lab); v=QLabel(val); v.setStyleSheet("font-size:15pt;font-weight:800;color:#38bdf8"); q.addWidget(v); f.val=v; self.cards.append(f); row.addWidget(f)
         l.addLayout(row)
         g=QGridLayout()
         for i,(txt,fn,k) in enumerate([
