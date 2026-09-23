@@ -1,13 +1,12 @@
-# Gradle
-.gradle/
-build/
-**/build/
-
-# Android Studio
-.idea/
-*.iml
-local.properties
-
+# Python
+__pycache__/
+*.pyc
+backups/
+captures/
+*.log
 # OS
-.DS_Store
 Thumbs.db
+.DS_Store
+# IDE
+.vscode/
+.idea/

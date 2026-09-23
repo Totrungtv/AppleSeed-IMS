@@ -1,18 +1,16 @@
-APPLE SEED ANDROID SERVICE CENTER - CLEAN 1-CLICK VoLTE
+# Apple Seed Android Service Center • PySide6
 
-File chính:
-- AppleSeed_Android_Service_Center.py
-- run_tool.bat
-- apps/AppleSeed_VoLTE.apk
-- assets/hbg_volte_fixer.dex
+Bản giao diện mới, tập trung vào thao tác sửa máy thực tế:
+- ADB tích hợp trong platform-tools
+- Tự nhận thiết bị và hiển thị Model / Android / SoC
+- Chẩn đoán battery, getprop, dumpsys, sensor, camera, logcat
+- Screenshot, reboot, recovery, bootloader
+- Quản lý APK và file qua ADB
+- Console ADB
+- VoLTE / IMS
+- Native CarrierConfig 1-Click + fallback VoLTE flags
+- Log riêng, chạy tác vụ nền để giao diện không bị treo
 
-VoLTE 1-CLICK:
-1. Kết nối Android bằng ADB/USB Debugging.
-2. Mở tool bằng run_tool.bat.
-3. Vào VoLTE / IMS.
-4. Chọn KÍCH HOẠT VoLTE TỰ ĐỘNG 1-CLICK.
+Chạy run_tool.bat. Nếu thiếu PySide6, launcher tự cài từ requirements.txt.
 
-Tool thử native CarrierConfig runner, sau đó fallback các cờ VoLTE phổ biến và đọc lại CarrierConfig/IMS.
-Không thay đổi IMEI, SIM lock, carrier lock, firmware modem hoặc bootloader.
-
-Lưu ý: bật CarrierConfig không đảm bảo IMS Registered; còn phụ thuộc ROM/ColorOS, SIM, nhà mạng, provisioning và modem.
+Lưu ý: VoLTE/IMS còn phụ thuộc ROM/ColorOS, SIM, provisioning, carrier và modem.
