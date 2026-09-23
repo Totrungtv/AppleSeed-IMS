@@ -441,40 +441,54 @@ class AndroidTool(QMainWindow):
             out=["===== CÀI APP VoLTE — CHẾ ĐỘ OPPO/COLOROS ====="]
             remote="/sdcard/AppleSeed_VoLTE.apk"
             try:
-                # OPPO/ColorOS có thể tự bật lại Verify apps over USB khi dùng
-                # "adb install". Vì vậy với APP VoLTE, ưu tiên đường cài như người
-                # dùng mở APK trên điện thoại: push APK -> mở Package Installer.
                 self._volte_progress(10,"Chuẩn bị APK")
                 self._volte_progress(30,"Đưa APK vào điện thoại")
                 rc,o=self.run(["-s",self.serial,"push",str(apk),remote],60)
-                out.append(f"PUSH rc={rc}\\n{o}")
+                out.append(f"PUSH rc={rc}\n{o}")
                 if rc!=0:
                     raise RuntimeError(o or "ADB push thất bại")
 
-                self._volte_progress(65,"Mở trình cài APK của Android")
+                self._volte_progress(65,"Mở trình cài APK Android")
+                # ACTION_INSTALL_PACKAGE gọi thẳng Package Installer, thay vì VIEW file.
                 rc,o=self.run([
                     "-s",self.serial,"shell","am","start",
-                    "-a","android.intent.action.VIEW",
+                    "-a","android.intent.action.INSTALL_PACKAGE",
                     "-d","file:///sdcard/AppleSeed_VoLTE.apk",
-                    "-t","application/vnd.android.package-archive"
+                    "-t","application/vnd.android.package-archive",
+                    "-f","0x10000000"
                 ],15)
-                out.append(f"PACKAGE INSTALLER rc={rc}\\n{o}")
-                out.append("\\nĐã mở trình cài APK trên điện thoại.")
-                out.append("Không dùng 'adb install', nên không kích hoạt lại đường xác minh APK qua USB.")
-                out.append("Nếu Android hỏi cho phép cài nguồn này, bấm Cài đặt/Cho phép rồi hoàn tất.")
+                out.append(f"PACKAGE INSTALLER rc={rc}\n{o}")
+
+                if rc!=0:
+                    # Một số ROM không đăng ký INSTALL_PACKAGE; thử VIEW làm fallback.
+                    rc2,o2=self.run([
+                        "-s",self.serial,"shell","am","start",
+                        "-a","android.intent.action.VIEW",
+                        "-d","file:///sdcard/AppleSeed_VoLTE.apk",
+                        "-t","application/vnd.android.package-archive",
+                        "-f","0x10000000"
+                    ],15)
+                    out.append(f"PACKAGE VIEW FALLBACK rc={rc2}\n{o2}")
+                    if rc2!=0:
+                        raise RuntimeError(o2 or o or "Không mở được trình cài APK")
+
+                out.append("")
+                out.append("Đã mở trình cài APK trên điện thoại.")
+                out.append("Không dùng adb install, nên không kích hoạt đường xác minh APK qua USB.")
+                out.append("Nếu Android hỏi quyền nguồn không xác định, cho phép rồi bấm Cài đặt.")
 
                 self.post(lambda:QMessageBox.information(
                     self,"Apple Seed VoLTE",
-                    "Đã đưa APK lên điện thoại và mở trình cài.\\n\\n"
-                    "👉 Cài trực tiếp trên điện thoại.\\n"
-                    "Tool không dùng 'adb install' để tránh OPPO tự bật lại Verify apps over USB."
+                    "Đã mở trình cài APK trên điện thoại.\n\n"
+                    "👉 Nhìn trên điện thoại và bấm CÀI ĐẶT.\n"
+                    "Tool không dùng 'adb install'."
                 ))
             except Exception as e:
                 out.append("LỖI: "+str(e))
-                self.post(lambda:QMessageBox.warning(self,"Cài APK lỗi",str(e)))
+                self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APK lỗi",e))
             finally:
-                self._volte_progress(100,"Hoàn tất bước mở trình cài")
-                self.showout(self.volte_out,"CÀI APP VoLTE","\\n\\n".join(out))
+                self._volte_progress(100,"Hoàn tất mở trình cài")
+                self.showout(self.volte_out,"CÀI APP VoLTE","\n".join(out))
                 self.log("VoLTE APK: push + mở Package Installer.")
         self.threaded(w)
 
