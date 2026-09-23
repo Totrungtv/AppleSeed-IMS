@@ -56,7 +56,7 @@ class AndroidTool(QMainWindow):
         self.devices=QComboBox(); self.devices.setMinimumWidth(350); self.devices.currentIndexChanged.connect(self.select_device); r.addWidget(self.devices)
         self.button(r,"↻ LÀM MỚI",self.refresh_devices)
         self.button(r,"CHỌN ADB.EXE",self.choose_adb)
-        self.button(r,"RESTART ADB",self.restart_adb)
+        self.button(r,"RESTART ADB",self.restart_adb); self.button(r,"🩺 CHẨN ĐOÁN ADB",self.adb_diagnose)
         r.addStretch(); self.devlabel=QLabel("Chưa chọn"); self.devlabel.setObjectName("muted"); r.addWidget(self.devlabel)
         main.addWidget(bar)
         self.tabs=QTabWidget(); main.addWidget(self.tabs,1)
@@ -80,8 +80,31 @@ class AndroidTool(QMainWindow):
         layout.addWidget(x); return x
 
     def find_adb(self):
-        p=self.base/"platform-tools"/("adb.exe" if os.name=="nt" else "adb")
-        return str(p) if p.exists() else shutil.which("adb")
+        # Ưu tiên ADB đi kèm tool, nhưng tự fallback sang ADB trong PATH.
+        names=["adb.exe","adb"] if os.name=="nt" else ["adb"]
+        for name in names:
+            p=self.base/"platform-tools"/name
+            if p.exists():
+                return str(p)
+        return shutil.which("adb")
+
+    def adb_diagnose(self):
+        if not self.adb:
+            self.log("❌ Không tìm thấy adb.exe. Hãy dùng CHỌN ADB.EXE hoặc đặt platform-tools cạnh tool.")
+            return
+        def w():
+            try:
+                rc,v=self.run(["version"],10)
+                rc2,d=self.run(["devices","-l"],15)
+                self.log("ADB VERSION: "+v.replace("\n"," | "))
+                self.log("ADB DEVICES: "+(d or "(trống)"))
+                if "unauthorized" in d:
+                    self.post(lambda:QMessageBox.warning(self,"ADB","Điện thoại chưa cấp quyền USB debugging. Mở khóa máy và bấm Allow/Cho phép trên điện thoại."))
+                elif not any(line.strip() and not line.startswith("List of devices") for line in d.splitlines()):
+                    self.post(lambda:QMessageBox.warning(self,"ADB","ADB chạy được nhưng chưa thấy thiết bị. Kiểm tra cáp dữ liệu, USB debugging và driver ADB."))
+            except Exception as e:
+                self.log("ADB DIAG ERROR: "+str(e))
+        self.threaded(w)
 
     def cmd(self,args):
         if not self.adb: raise RuntimeError("Không tìm thấy adb.exe")
@@ -180,10 +203,16 @@ class AndroidTool(QMainWindow):
         if not self.adb:self.log("❌ Thiếu platform-tools/adb.exe");return
         def w():
             try:
-                self.run(["start-server"],10);rc,out=self.run(["devices"],10);rows=[]
+                self.run(["start-server"],10);rc,out=self.run(["devices","-l"],15);rows=[]
                 for line in out.splitlines()[1:]:
                     p=line.split()
-                    if len(p)>=2:rows.append((p[0],p[1]))
+                    if len(p)>=2:
+                        rows.append((p[0],p[1]))
+                if not rows:
+                    self.log("ADB devices: KHÔNG CÓ THIẾT BỊ")
+                    self.log("ADB output: "+(out or "(trống)"))
+                else:
+                    self.log("ADB devices: "+str(rows))
                 def ui():
                     self.devices.blockSignals(True);self.devices.clear()
                     for s,st in rows:self.devices.addItem(f"{s} • {st}",s)
