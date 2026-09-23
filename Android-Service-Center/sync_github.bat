@@ -30,7 +30,7 @@ if errorlevel 1 (
 
 echo [3/5] Nap thay doi local...
 git add .
-git status
+git status --short
 
 echo [4/5] Commit local...
 git diff --cached --quiet
@@ -46,37 +46,36 @@ if errorlevel 1 (
   exit /b 1
 )
 
-git show-ref --verify --quiet refs/heads/main
-if not errorlevel 1 (
-  git branch --set-upstream-to=origin/main main >nul 2>&1
+for /f "delims=" %%B in ('git branch --show-current') do set "CURRENT_BRANCH=%%B"
+echo [INFO] Branch local: !CURRENT_BRANCH!
+
+if /I not "!CURRENT_BRANCH!"=="main" (
+  echo [INFO] Local khong phai main. Rebase commit local len origin/main...
   git pull --rebase origin main
   if errorlevel 1 (
+    echo.
     echo [ERROR] Rebase bi xung dot. KHONG force push.
-    echo Hay xu ly conflict/rebase roi chay lai.
+    echo Hay gui man hinh nay de xu ly.
     pause
     exit /b 1
   )
-  git push -u origin main
-) else (
-  echo [INFO] Local dang o branch khac main. Day HEAD truc tiep len origin/main...
-  git push -u origin HEAD:main
-  if errorlevel 1 (
-    echo [ERROR] Push that bai.
-    pause
-    exit /b 1
-  )
-  git branch -M main
-  git branch --set-upstream-to=origin/main main >nul 2>&1
 )
 
+echo [INFO] Push HEAD len origin/main...
+git push -u origin HEAD:main
 if errorlevel 1 (
   echo.
-  echo [ERROR] Push that bai. Kiem tra remote/GitHub.
+  echo [ERROR] Push that bai. KHONG force push.
+  echo Kiem tra trang thai Git/rebase roi chay lai.
   pause
   exit /b 1
 )
 
+git branch -M main
+git branch --set-upstream-to=origin/main main >nul 2>&1
+
 echo.
 echo [OK] DA DONG BO LEN GITHUB:
 echo https://github.com/Totrungtv/AppleSeed-IMS
+echo [OK] Branch local hien tai: main
 pause
