@@ -1,0 +1,4 @@
+Apple Seed Android Service Center VIP v6.1.1
+One-click OPPO VoLTE added.
+Remote: https://github.com/Totrungtv/AppleSeed-IMS
+Local package: AppleSeed_Android_Service_Center_VIP_v6.1.1.zip
