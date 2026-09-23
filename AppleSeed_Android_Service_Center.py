@@ -390,37 +390,35 @@ class AndroidTool(QMainWindow):
                 # 1-CLICK: cài APK -> áp dụng cấu hình bằng ADB shell -> mở app.
                 # WRITE_SECURE_SETTINGS là signature-only đối với app bên thứ ba, nên không ép pm grant.
                 # ADB shell là lớp thực thi quyền; APK chỉ đọc/hiển thị trạng thái sau khi tool áp dụng.
-                self._volte_progress(5,"Cài Apple Seed VoLTE APK")
-                if apk.exists():
-                    # ColorOS có thể chặn ADB install. Đường ổn định nhất:
-                    # đẩy APK vào bộ nhớ máy -> mở trình cài Android -> người dùng bấm Cài đặt.
-                    # Sau đó tool tự phát hiện package đã cài và tiếp tục phần Native/flags.
+                self._volte_progress(5,"Kiểm tra Apple Seed VoLTE APK")
+                installed=False
+                try:
+                    installed="package:vn.appleseed.volte" in self.shell("pm list packages vn.appleseed.volte",8)
+                except Exception:
+                    installed=False
+
+                if apk.exists() and not installed:
+                    # ColorOS chặn adb install trên một số máy: chép APK vào máy
+                    # rồi mở trình cài hệ thống. Chỉ cần người dùng bấm CÀI ĐẶT 1 lần.
                     apk_dir="/sdcard/AppleSeed/APK"
                     apk_remote=apk_dir+"/AppleSeed_VoLTE.apk"
-                    self._volte_progress(8,"Đưa APK vào thư mục Apple Seed trên máy")
+                    self._volte_progress(8,"Chép APK vào Apple Seed/APK")
                     rc_mk,o_mk=self.run(["-s",self.serial,"shell","mkdir","-p",apk_dir],15)
                     out.append(f"\n--- MKDIR APK rc={rc_mk} ---\n{o_mk}")
                     rc_push,o_push=self.run(["-s",self.serial,"push",str(apk),apk_remote],60)
                     out.append(f"\n--- PUSH APK rc={rc_push} ---\n{o_push}")
                     if rc_push!=0:
-                        raise RuntimeError("Không chép được APK vào máy: "+(o_push or "ADB push thất bại"))
+                        raise RuntimeError("Không chép được APK: "+(o_push or "ADB push thất bại"))
 
                     self._volte_progress(12,"Mở trình cài APK — bấm CÀI ĐẶT")
                     view_cmd=["-s",self.serial,"shell","am","start","-a","android.intent.action.VIEW","-d","file://"+apk_remote,"-t","application/vnd.android.package-archive"]
                     rc_view,o_view=self.run(view_cmd,20)
                     out.append(f"\n--- OPEN APK INSTALLER rc={rc_view} ---\n{o_view}")
-
-                    # Một số ColorOS không nhận file:// từ am start. Mở thư mục Download/file manager làm fallback.
                     if rc_view!=0:
                         rc_view2,o_view2=self.run(["-s",self.serial,"shell","am","start","-a","android.intent.action.VIEW","-d","file:///sdcard/AppleSeed/APK/"],20)
                         out.append(f"\n--- OPEN APK FOLDER rc={rc_view2} ---\n{o_view2}")
-                    out.append(
-                        "\n>>> APK ĐÃ ĐƯỢC CHÉP VÀO: "+apk_remote+
-                        "\n>>> HÃY BẤM 'CÀI ĐẶT' TRÊN MÁY. TOOL SẼ TỰ PHÁT HIỆN SAU KHI CÀI. <<<"
-                    )
+                    out.append("\n>>> Bấm CÀI ĐẶT trên điện thoại. Tool tự chờ tối đa 120 giây. <<<")
 
-                    # Chờ người dùng cài thủ công, tối đa 120 giây; không cần chạy lệnh ADB nào thêm.
-                    installed=False
                     for _ in range(60):
                         time.sleep(2)
                         try:
@@ -430,10 +428,13 @@ class AndroidTool(QMainWindow):
                         if installed:
                             break
                     if not installed:
-                        raise RuntimeError(
-                            "Đã chép APK thành công nhưng chưa thấy cài đặt. "
-                            "Mở thư mục AppleSeed/APK trên điện thoại và bấm AppleSeed_VoLTE.apk → Cài đặt, rồi chạy lại 1-CLICK."
-                        )
+                        raise RuntimeError("APK chưa được cài. Bấm CÀI ĐẶT trên điện thoại rồi chạy lại 1-CLICK.")
+                elif installed:
+                    out.append("\n--- APK ĐÃ CÓ SẴN, BỎ QUA CÀI ĐẶT ---")
+                elif not apk.exists():
+                    out.append("\n--- KHÔNG CÓ APK LOCAL, TIẾP TỤC NATIVE ---")
+
+                if installed:
                     out.append("\n--- APK ĐÃ CÀI THÀNH CÔNG ---")
                 try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8")
                 except Exception as e: out.append("BACKUP: bỏ qua - "+str(e))
