@@ -406,14 +406,43 @@ class AndroidTool(QMainWindow):
     def install_volte_app(self):
         if not self.require():return
         apk=self.base/"apps"/"AppleSeed_VoLTE.apk"
-        if not apk.exists():QMessageBox.warning(self,"APK","Thiếu apps/AppleSeed_VoLTE.apk");return
+        if not apk.exists():
+            QMessageBox.warning(self,"APK","Thiếu apps/AppleSeed_VoLTE.apk");return
+        if not self.ask("CÀI APP VoLTE","Android báo INSTALL_FAILED_VERIFICATION_FAILURE. Cho phép ADB cài APK bằng cách tạm tắt kiểm tra APK, sau đó tool sẽ khôi phục cài đặt?"):
+            return
         def w():
-            rc,o=self.run(["-s",self.serial,"install","-r","-d",str(apk)],90);out=f"INSTALL rc={rc}\n{o}"
-            if rc==0:
-                rg,og=self.run(["-s",self.serial,"shell","pm","grant","vn.appleseed.volte","android.permission.WRITE_SECURE_SETTINGS"],15);out+=f"\n\nGRANT rc={rg}\n{og}"
-            self.showout(self.volte_out,"CÀI APP VoLTE",out)
+            out=["===== CÀI APP VoLTE ====="]
+            try:
+                # ColorOS/Android 8 có thể chặn ADB install bởi Package Verifier.
+                keys=["package_verifier_enable","verifier_verify_adb_installs"]
+                oldvals={}
+                for k in keys:
+                    rc,v=self.run(["-s",self.serial,"shell","settings","get","global",k],8)
+                    oldvals[k]=v.strip() if rc==0 else "null"
+                out.append("VERIFIER TRƯỚC: "+str(oldvals))
+                for k in keys:
+                    rc,v=self.run(["-s",self.serial,"shell","settings","put","global",k,"0"],8)
+                    out.append(f"DISABLE {k}: rc={rc} {v}".strip())
+                rc,o=self.run(["-s",self.serial,"install","-r","-d","--no-streaming",str(apk)],90)
+                out.append(f"INSTALL rc={rc}\n{o}")
+                if rc!=0:
+                    rc2,o2=self.run(["-s",self.serial,"install","-r","-d",str(apk)],90)
+                    out.append(f"INSTALL RETRY rc={rc2}\n{o2}")
+                    rc=rc2
+                if rc==0:
+                    rg,og=self.run(["-s",self.serial,"shell","pm","grant","vn.appleseed.volte","android.permission.WRITE_SECURE_SETTINGS"],15)
+                    out.append(f"GRANT WRITE_SECURE_SETTINGS rc={rg}\n{og}")
+                    rv,ov=self.run(["-s",self.serial,"shell","pm","path","vn.appleseed.volte"],10)
+                    out.append(f"VERIFY PACKAGE rc={rv}\n{ov}")
+                else:
+                    out.append("GỢI Ý: Nếu vẫn VERIFICATION_FAILURE, kiểm tra Play Protect/nguồn cài APK trên máy.")
+            finally:
+                for k,v in oldvals.items():
+                    if v and v not in ("null","NULL","None"):
+                        self.run(["-s",self.serial,"shell","settings","put","global",k,v],8)
+                out.append("VERIFIER SAU: đã khôi phục cài đặt trước đó.")
+                self.showout(self.volte_out,"CÀI APP VoLTE","\n\n".join(out))
         self.threaded(w)
-
     def open_volte_app(self):
         if not self.require():return
         def w():
