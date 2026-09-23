@@ -1,7 +1,7 @@
 import os, sys, time, shutil, subprocess, threading
 from pathlib import Path
 from PySide6.QtCore import Qt, QEvent
-from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar
+from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar
 
 APP="Apple Seed Android Service Center"
 VER="PySide6-1.0"
@@ -69,13 +69,16 @@ class AndroidTool(QMainWindow):
         self.tabs.addTab(self.files_tab(),"□  TỆP")
         self.tabs.addTab(self.adb_tab()," >_  LỆNH ADB")
         self.tabs.addTab(self.logs_tab(),"≡  NHẬT KÝ")
-        self.status=QStatusBar(); self.setStatusBar(self.status); self.status.showMessage("Sẵn sàng.")
+        self.status=QStatusBar(); self.setStatusBar(self.status)
+        self.progress=QProgressBar(); self.progress.setRange(0,0); self.progress.setFixedWidth(180); self.progress.hide()
+        self.status.addPermanentWidget(self.progress)
+        self.status.showMessage("Sẵn sàng.")
 
     def badge_css(self,on):
         return ("background:#064e3b;color:#bbf7d0;" if on else "background:#3b1720;color:#fecaca;")+"border-radius:8px;padding:8px 14px;font-weight:800"
 
     def button(self,layout,text,fn,kind=""):
-        x=QPushButton(text); x.clicked.connect(fn)
+        x=QPushButton(text); x.clicked.connect(lambda checked=False, b=x, f=fn: (b.setEnabled(False), self.status.showMessage("⏳ "+b.text()+" ..."), f(), b.setEnabled(True)))
         if kind:x.setObjectName(kind)
         layout.addWidget(x); return x
 
@@ -116,7 +119,13 @@ class AndroidTool(QMainWindow):
         return p.returncode,((p.stdout or "")+(p.stderr or "")).strip()
 
     def shell(self,s,timeout=30):
-        rc,out=self.run(["-s",self.serial,"shell","sh","-c",s],timeout)
+        parts=s.strip().split()
+        simple={"getprop","settings","pm","reboot","screencap","rm","ls","df","logcat","dumpsys","service","ps","input","am"}
+        if len(parts)>0 and parts[0] in simple and not any(ch in s for ch in "|&;><"):
+            args=["-s",self.serial,"shell"]+parts
+        else:
+            args=["-s",self.serial,"shell","sh","-c",s]
+        rc,out=self.run(args,timeout)
         if rc: raise RuntimeError(out or f"ADB rc={rc}")
         return out
 
@@ -127,7 +136,17 @@ class AndroidTool(QMainWindow):
             except Exception:pass
         else:super().customEvent(e)
 
-    def threaded(self,fn): threading.Thread(target=fn,daemon=True).start()
+    def threaded(self,fn):
+        self.post(lambda:(self.progress.show(), self.status.showMessage("⏳ ĐANG XỬ LÝ...")))
+        def worker():
+            started=time.time(); ok=True
+            try: fn()
+            except Exception as e:
+                ok=False; self.log("TASK ERROR: "+str(e))
+            finally:
+                elapsed=time.time()-started
+                self.post(lambda ok=ok,elapsed=elapsed:(self.progress.hide(), self.status.showMessage(("✅ HOÀN TẤT" if ok else "❌ CÓ LỖI")+f" • {elapsed:.1f}s",5000)))
+        threading.Thread(target=worker,daemon=True).start()
     def require(self):
         if not self.serial:
             QMessageBox.warning(self,"Apple Seed","Chưa chọn thiết bị ADB."); return False
@@ -233,13 +252,14 @@ class AndroidTool(QMainWindow):
         i=self.devices.currentIndex()
         if i<0:return
         self.serial=self.devices.itemData(i) or ""; on=bool(self.serial);self.badge.setText("ADB: KẾT NỐI" if on else "ADB: CHƯA SẴN SÀNG");self.badge.setStyleSheet(self.badge_css(on));self.devlabel.setText(self.serial or "Chưa chọn")
+        self.status.showMessage(("📱 Đã chọn thiết bị: "+self.serial) if on else "Chưa chọn thiết bị",4000)
         if on:self.refresh_info()
 
     def refresh_info(self):
         def w():
             try:
                 model=self.shell("getprop ro.product.model",8);android=self.shell("getprop ro.build.version.release",8);soc=self.shell("getprop ro.board.platform",8)
-                self.post(lambda:(self.cards[0].val.setText(model or self.serial),self.cards[1].val.setText(android or "—"),self.cards[2].val.setText(soc or "—"),self.cards[3].val.setText("Sẵn sàng")))
+                self.post(lambda:(self.cards[0].val.setText((model or self.serial).splitlines()[0]),self.cards[1].val.setText((android or "—").splitlines()[0]),self.cards[2].val.setText((soc or "—").splitlines()[0]),self.cards[3].val.setText("KẾT NỐI")))
             except:pass
         self.threaded(w)
 
