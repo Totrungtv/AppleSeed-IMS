@@ -217,7 +217,13 @@ class AndroidTool(QMainWindow):
                     self.devices.blockSignals(True);self.devices.clear()
                     for s,st in rows:self.devices.addItem(f"{s} • {st}",s)
                     self.devices.blockSignals(False)
-                    if rows:self.devices.setCurrentIndex(0)
+                    if rows:
+                        self.devices.setCurrentIndex(0)
+                        self.select_device()
+                    else:
+                        self.serial=""
+                        self.badge.setText("ADB: CHƯA SẴN SÀNG")
+                        self.devlabel.setText("Chưa chọn")
                     self.log("ADB: "+(str(rows) if rows else "không có thiết bị"))
                 self.post(ui)
             except Exception as e:self.log("ADB ERROR: "+str(e))
