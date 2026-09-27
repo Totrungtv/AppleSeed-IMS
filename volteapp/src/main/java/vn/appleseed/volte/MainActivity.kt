@@ -25,6 +25,17 @@ class MainActivity : ComponentActivity() {
     private fun allEnabled() =
         read(KEY_VOLTE_VT) && read(KEY_ENHANCED_4G) && read(KEY_VOLTE) && read(KEY_CARRIER_VT)
 
+    private fun write(key: String, value: Boolean) {
+        Settings.Global.putInt(contentResolver, key, if (value) 1 else 0)
+    }
+
+    private fun setVolte(enabled: Boolean) {
+        write(KEY_VOLTE_VT, enabled)
+        write(KEY_ENHANCED_4G, enabled)
+        write(KEY_VOLTE, enabled)
+        write(KEY_CARRIER_VT, enabled)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -52,8 +63,25 @@ class MainActivity : ComponentActivity() {
                             }
                             Switch(
                                 checked = enabled,
-                                onCheckedChange = {
-                                    status = "Hãy dùng Apple Seed Android Service Center → VOLTE 1-CLICK để áp dụng. APK không tự cấp WRITE_SECURE_SETTINGS."
+                                onCheckedChange = { wantEnabled ->
+                                    runCatching {
+                                        setVolte(wantEnabled)
+                                        enabled = allEnabled()
+                                        status = if (enabled) {
+                                            "VoLTE đã BẬT."
+                                        } else if (!wantEnabled && !allEnabled()) {
+                                            "VoLTE đã TẮT."
+                                        } else {
+                                            "Đã gửi lệnh nhưng thiết bị chưa xác nhận đủ cờ VoLTE."
+                                        }
+                                    }.onFailure { e ->
+                                        enabled = allEnabled()
+                                        status = if (e is SecurityException) {
+                                            "Không đủ quyền ghi cờ hệ thống. Hãy cài lại bằng Apple Seed Service Center để thử cấp quyền ADB."
+                                        } else {
+                                            "Không thể đổi VoLTE: " + (e.message ?: e.javaClass.simpleName)
+                                        }
+                                    }
                                 }
                             )
                         }
@@ -65,6 +93,11 @@ class MainActivity : ComponentActivity() {
                     Text("enhanced_4g_mode_enabled = " + read(KEY_ENHANCED_4G))
                     Text("volte_enabled = " + read(KEY_VOLTE))
                     Text("carrier_vt_enabled = " + read(KEY_CARRIER_VT))
+
+                    Text(
+                        "Công tắc ghi 4 cờ VoLTE phổ biến. IMS thực tế vẫn phụ thuộc SIM, nhà mạng, provisioning và modem.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
 
                     Button(
                         onClick = {
