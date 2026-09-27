@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apple Seed Huawei Tool</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#07110d;color:#edf8f2;font:14px system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1100px;margin:auto;padding:24px}.card{background:#0d1b15;border:1px solid #214333;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 10px 30px #0004}
+h1{margin:0 0 8px}.muted{color:#8ba99a}button{padding:11px 16px;border-radius:10px;border:1px solid #2c6548;background:#10271c;color:#fff;cursor:pointer;margin:4px}
+button.primary{background:#19d37b;color:#062013;border:0;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{padding:14px;background:#091811;border:1px solid #193b2a;border-radius:10px}.stat small{display:block;color:#8ba99a}.stat b{display:block;margin-top:5px;word-break:break-word}
+.row{display:flex;gap:8px}.row input{flex:1;padding:11px;background:#06100c;color:#fff;border:1px solid #204333;border-radius:10px}
+pre{white-space:pre-wrap;background:#050b08;padding:14px;border-radius:10px;min-height:180px;max-height:400px;overflow:auto}
+@media(max-width:700px){main{padding:12px}.grid{grid-template-columns:2fr 2fr}.row{flex-direction:column}}
+</style></head>
+<body><main>
+<div class="card"><h1>🍏 APPLE SEED · HUAWEI TOOL</h1><p class="muted">WebADB — kết nối Android trực tiếp bằng Chrome/Edge + USB.</p>
+<button id="connect" class="primary">🔌 Kết nối thiết bị</button><button id="disconnect">Ngắt</button><b id="status">Chưa kết nối</b></div>
+<div class="grid">
+<div class="stat"><small>Hãng</small><b id="brand">—</b></div><div class="stat"><small>Model</small><b id="model">—</b></div>
+<div class="stat"><small>Android</small><b id="android">—</b></div><div class="stat"><small>Serial</small><b id="serial">—</b></div></div>
+<div class="card"><h2>Thao tác nhanh</h2>
+<button data-cmd="getprop ro.product.brand">Hãng</button><button data-cmd="getprop ro.product.model">Model</button>
+<button data-cmd="getprop ro.build.version.release">Android</button><button data-cmd="getprop gsm.version.baseband">Baseband</button>
+<button data-cmd="settings get global volte_vt_enabled">VoLTE / VT</button><button data-cmd="getprop ro.build.display.id">Build</button>
+<h2>ADB Shell</h2><div class="row"><input id="cmd" placeholder="getprop ro.product.model"><button id="run">Chạy</button></div></div>
+<div class="card"><h2>Nhật ký</h2><pre id="log">Apple Seed Huawei Tool sẵn sàng.</pre></div>
+</main>
+<script type="module">
+import {Adb,AdbDaemonTransport} from "https://esm.sh/@yume-chan/adb@0.0.24";
+import AdbWebCredentialStore from "https://esm.sh/@yume-chan/adb-credential-web@0.0.24";
+import {AdbDaemonWebUsbDeviceManager} from "https://esm.sh/@yume-chan/adb-daemon-webusb@0.0.24";
+let adb=null,device=null;
+const $=id=>document.getElementById(id);
+function log(x){$("log").textContent+="\n"+x;$("log").scrollTop=$("log").scrollHeight}
+async function shell(c){if(!adb)throw Error("Chưa kết nối");const r=await adb.subprocess.noneProtocol.spawnAndWait(c);return (typeof r.stdout==="string"?r.stdout:new TextDecoder().decode(r.stdout||new Uint8Array())).trim()}
+async function run(c){try{log("$ adb shell "+c);const o=await shell(c);log(o||"(không có output)");return o}catch(e){log("LỖI: "+e.message)}}
+$("connect").onclick=async()=>{try{
+device=await AdbDaemonWebUsbDeviceManager.BROWSER.requestDevice();if(!device)return;
+log("Đã chọn "+(device.name||device.serial));const connection=await device.connect();
+const store=new AdbWebCredentialStore("AppleSeed-Huawei-Tool");
+const transport=await AdbDaemonTransport.authenticate({serial:device.serial,connection,credentialStore:store});
+adb=new Adb(transport);$("status").textContent="Đã kết nối";$("serial").textContent=device.serial||"—";
+$("brand").textContent=await shell("getprop ro.product.brand");$("model").textContent=await shell("getprop ro.product.model");
+$("android").textContent=await shell("getprop ro.build.version.release");log("Thiết bị sẵn sàng.")
+}catch(e){log("KẾT NỐI LỖI: "+e.message)}};
+$("disconnect").onclick=async()=>{try{await adb?.close()}catch{}adb=null;device=null;$("status").textContent="Chưa kết nối";log("Đã ngắt.")};
+$("run").onclick=()=>{const c=$("cmd").value.trim();if(c)run(c)};
+document.querySelectorAll("[data-cmd]").forEach(b=>b.onclick=()=>run(b.dataset.cmd));
+</script></body></html>
