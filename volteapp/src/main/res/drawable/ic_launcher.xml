@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Apple Seed brand background -->
+    <path
+        android:fillColor="#0B8F55"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- Apple/seed body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,78
+            C39,78 31,68 31,54
+            C31,42 39,34 50,34
+            C53,34 56,35 59,37
+            C62,35 66,34 70,34
+            C73,34 76,35 79,37
+            C72,40 69,45 69,51
+            C69,59 75,64 81,65
+            C77,73 68,78 60,78
+            C58,78 56,77 54,78Z" />
+
+    <!-- Leaf -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M58,34
+            C60,25 68,20 77,20
+            C77,29 71,35 62,37
+            C61,36 60,35 58,34Z" />
+
+    <!-- Seed cut / detail -->
+    <path
+        android:fillColor="#0B8F55"
+        android:pathData="M54,45
+            C51,49 50,54 51,59
+            C52,63 55,66 59,67
+            C58,61 59,55 62,50
+            C60,47 57,45 54,45Z" />
+</vector>
