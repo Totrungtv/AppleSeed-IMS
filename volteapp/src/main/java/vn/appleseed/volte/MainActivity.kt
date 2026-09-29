@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.provider.Settings
 import java.io.InputStream
 import rikka.shizuku.Shizuku
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ private const val KEY_ENHANCED_4G = "enhanced_4g_mode_enabled"
 private const val KEY_VOLTE = "volte_enabled"
 private const val KEY_CARRIER_VT = "carrier_vt_enabled"
 private const val SHIZUKU_REQUEST_CODE = 4107
+private const val ACTION_FIX_VOLTE = "vn.appleseed.volte.action.FIX_VOLTE"
 
 class MainActivity : ComponentActivity() {
     private var shizukuGrantedState by mutableStateOf(false)
@@ -151,6 +153,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        HiddenApiBypass.addHiddenApiExemptions("L", "I")
+
         Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
             if (requestCode == SHIZUKU_REQUEST_CODE) {
                 shizukuGrantedState =
@@ -160,6 +164,12 @@ class MainActivity : ComponentActivity() {
         }
 
         refreshShizukuState()
+
+        if (intent?.action == ACTION_FIX_VOLTE) {
+            runCatching {
+                CarrierConfigBridge.applyVoLTE(this)
+            }
+        }
 
         setContent {
             var enabled by remember { mutableStateOf(allEnabled()) }
@@ -174,7 +184,21 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text("🍎 Apple Seed VoLTE", style = MaterialTheme.typography.headlineMedium)
-                    Text("Hỗ trợ 2 đường: WRITE_SECURE_SETTINGS trực tiếp hoặc Shizuku/ADB shell.")
+                    Text("Hỗ trợ CarrierConfig thật qua Shizuku + IMS reset, kèm cờ hệ thống.")
+
+                    Button(
+                        onClick = {
+                            runCatching {
+                                status = CarrierConfigBridge.applyVoLTE(this@MainActivity)
+                                enabled = true
+                            }.onFailure { e ->
+                                refreshShizukuState()
+                                status = "✕ CarrierConfig: " + (e.message ?: e.javaClass.simpleName)
+                            }
+                        },
+                        enabled = shizukuGrantedState,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("⚡ FIX VOLTE + CARRIERCONFIG + IMS") }
 
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(
