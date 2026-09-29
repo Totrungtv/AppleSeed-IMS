@@ -165,17 +165,19 @@ class MainActivity : ComponentActivity() {
 
         refreshShizukuState()
 
-        if (intent?.action == ACTION_FIX_VOLTE) {
-            runCatching {
-                CarrierConfigBridge.applyVoLTE(this)
-            }
-        }
+        val autoFixResult = if (intent?.action == ACTION_FIX_VOLTE) {
+            runCatching { CarrierConfigBridge.applyVoLTE(this) }
+                .fold(
+                    onSuccess = { it },
+                    onFailure = { "✕ CarrierConfig: " + (it.message ?: it.javaClass.simpleName) }
+                )
+        } else null
 
         setContent {
             var enabled by remember { mutableStateOf(allEnabled()) }
             var secureGranted by remember { mutableStateOf(hasSecureSettingsPermission()) }
             var status by remember {
-                mutableStateOf("Đang kiểm tra quyền…")
+                mutableStateOf(autoFixResult ?: "Đang kiểm tra quyền…")
             }
 
             MaterialTheme {
