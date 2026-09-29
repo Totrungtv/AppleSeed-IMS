@@ -584,7 +584,11 @@ class AndroidTool(QMainWindow):
     def open_volte_app(self):
         if not self.require():return
         def w():
-            rc,o=self.run(["-s",self.serial,"shell","monkey","-p","vn.appleseed.volte","1"],15);self.showout(self.volte_out,"MỞ APP",f"rc={rc}\n{o}")
+            # Explicit component ổn định hơn monkey trên Samsung/ColorOS.
+            rc,o=self.run(["-s",self.serial,"shell","am","start","-n","vn.appleseed.volte/.MainActivity"],15)
+            if rc!=0:
+                rc,o=self.run(["-s",self.serial,"shell","monkey","-p","vn.appleseed.volte","1"],15)
+            self.showout(self.volte_out,"MỞ APP",f"rc={rc}\n{o}")
         self.threaded(w)
 
     def list_packages(self):
