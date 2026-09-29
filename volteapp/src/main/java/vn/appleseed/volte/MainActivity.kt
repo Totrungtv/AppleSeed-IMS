@@ -27,8 +27,9 @@ class MainActivity : ComponentActivity() {
         checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
+    // Không yêu cầu cả 4 key: nhiều ROM/ColorOS chỉ dùng một hoặc hai key chính.
     private fun allEnabled() =
-        read(KEY_VOLTE_VT) && read(KEY_ENHANCED_4G) && read(KEY_VOLTE) && read(KEY_CARRIER_VT)
+        read(KEY_VOLTE_VT) || read(KEY_ENHANCED_4G)
 
     private fun write(key: String, value: Boolean): Boolean {
         if (!hasSecureSettingsPermission()) {
@@ -85,9 +86,9 @@ class MainActivity : ComponentActivity() {
             var secureGranted by remember { mutableStateOf(hasSecureSettingsPermission()) }
             var status by remember {
                 mutableStateOf(
-                    if (!secureGranted) "Chưa được cấp WRITE_SECURE_SETTINGS. Hãy cấp quyền từ WebADB."
-                    else if (enabled) "Đã đọc thấy đủ 4 cờ đang bật."
-                    else "Chưa bật đủ 4 cờ VoLTE."
+                    if (!secureGranted) "CHƯA CÓ QUYỀN GHI CỜ HỆ THỐNG — hãy cấp quyền từ WebADB."
+                    else if (enabled) "Cờ VoLTE chính đang BẬT."
+                    else "Cờ VoLTE chính đang TẮT."
                 )
             }
 
@@ -106,7 +107,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             Column {
                                 Text("CỜ VoLTE (ADB/QUYỀN HỆ THỐNG)", style = MaterialTheme.typography.titleMedium)
-                                Text(if (enabled) "ĐỦ 4 CỜ ĐANG BẬT" else "CHƯA ĐỦ 4 CỜ BẬT")
+                                Text(if (enabled) "CỜ VoLTE CHÍNH ĐANG BẬT" else "CỜ VoLTE CHÍNH ĐANG TẮT")
                             }
                             Switch(
                                 enabled = secureGranted,
@@ -117,9 +118,9 @@ class MainActivity : ComponentActivity() {
                                         enabled = allEnabled()
                                         status = when {
                                             accepted && enabled == wantEnabled ->
-                                                "Đã ghi và đọc lại đủ 4 cờ: " + if (wantEnabled) "BẬT." else "TẮT."
+                                                "Đã ghi và đọc lại cờ VoLTE chính: " + if (wantEnabled) "BẬT." else "TẮT."
                                             else ->
-                                                "Không xác nhận được đủ 4 cờ. Máy có thể từ chối quyền ghi hoặc không hỗ trợ các cờ này."
+                                                "Đã thử ghi nhưng ROM không xác nhận cờ VoLTE chính. Xem 4 dòng trạng thái bên dưới."
                                         }
                                     }.onFailure { e ->
                                         enabled = allEnabled()
@@ -136,7 +137,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Text(status)
-                    Text("Trạng thái cờ hiện tại:", style = MaterialTheme.typography.titleMedium)
+                    Text("TRẠNG THÁI QUYỀN & CỜ HỆ THỐNG:", style = MaterialTheme.typography.titleMedium)
                     Text("WRITE_SECURE_SETTINGS = " + if (secureGranted) "GRANTED" else "DENIED")
                     Text("volte_vt_enabled = " + read(KEY_VOLTE_VT))
                     Text("enhanced_4g_mode_enabled = " + read(KEY_ENHANCED_4G))
@@ -149,8 +150,8 @@ class MainActivity : ComponentActivity() {
                             enabled = allEnabled()
                             status = when {
                                 !secureGranted -> "WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB."
-                                enabled -> "Cờ VoLTE chính đã BẬT (volte_vt_enabled/enhanced_4g_mode_enabled)."
-                                else -> "Quyền SYSTEM đã có nhưng cờ VoLTE chính vẫn TẮT."
+                                enabled -> "Cờ VoLTE chính đã BẬT."
+                                else -> "Đã có quyền SYSTEM nhưng cờ VoLTE chính vẫn TẮT."
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
