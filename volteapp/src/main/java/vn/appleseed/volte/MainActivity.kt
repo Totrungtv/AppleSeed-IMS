@@ -38,21 +38,23 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setVolte(enabled: Boolean): Boolean {
-        val results = listOf(
-            write(KEY_VOLTE_VT, enabled),
-            write(KEY_ENHANCED_4G, enabled),
-            write(KEY_VOLTE, enabled),
-            write(KEY_CARRIER_VT, enabled)
-        )
-        val readBackMatches = listOf(
-            read(KEY_VOLTE_VT),
-            read(KEY_ENHANCED_4G),
-            read(KEY_VOLTE),
-            read(KEY_CARRIER_VT)
-        ).all { it == enabled }
-        return results.all { it } && readBackMatches
-    }
+        if (!hasSecureSettingsPermission()) {
+            throw SecurityException("WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB.")
+        }
 
+        val results = linkedMapOf<String, Boolean>()
+        for (key in listOf(KEY_VOLTE_VT, KEY_ENHANCED_4G, KEY_VOLTE, KEY_CARRIER_VT)) {
+            results[key] = runCatching {
+                Settings.Global.putInt(contentResolver, key, if (enabled) 1 else 0)
+            }.getOrDefault(false)
+        }
+
+        // Không bắt buộc mọi ROM phải có đủ 4 key. Trên một số ColorOS chỉ
+        // volte_vt_enabled/enhanced_4g_mode_enabled tồn tại và có tác dụng.
+        val primary = read(KEY_VOLTE_VT)
+        val enhanced = read(KEY_ENHANCED_4G)
+        return if (enabled) primary || enhanced else !primary && !enhanced
+    }
     private fun openVolteSettings() {
         // Samsung/Android không dùng một Activity duy nhất cho mọi phiên bản.
         // Thử màn hình Mobile Network cụ thể trước, sau đó fallback về Settings chuẩn.
@@ -147,8 +149,8 @@ class MainActivity : ComponentActivity() {
                             enabled = allEnabled()
                             status = when {
                                 !secureGranted -> "WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB."
-                                enabled -> "Đã đọc thấy đủ 4 cờ đang bật."
-                                else -> "Quyền SYSTEM đã có nhưng chưa đủ 4 cờ VoLTE."
+                                enabled -> "Cờ VoLTE chính đã BẬT (volte_vt_enabled/enhanced_4g_mode_enabled)."
+                                else -> "Quyền SYSTEM đã có nhưng cờ VoLTE chính vẫn TẮT."
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
