@@ -28,5 +28,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("com.anggrayudi:android-hidden-api:35.0")
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
