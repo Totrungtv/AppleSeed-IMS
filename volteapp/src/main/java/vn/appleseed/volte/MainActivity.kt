@@ -23,11 +23,19 @@ class MainActivity : ComponentActivity() {
     private fun read(key: String): Boolean =
         runCatching { Settings.Global.getInt(contentResolver, key, 0) == 1 }.getOrDefault(false)
 
+    private fun hasSecureSettingsPermission(): Boolean =
+        checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
     private fun allEnabled() =
         read(KEY_VOLTE_VT) && read(KEY_ENHANCED_4G) && read(KEY_VOLTE) && read(KEY_CARRIER_VT)
 
-    private fun write(key: String, value: Boolean): Boolean =
-        Settings.Global.putInt(contentResolver, key, if (value) 1 else 0)
+    private fun write(key: String, value: Boolean): Boolean {
+        if (!hasSecureSettingsPermission()) {
+            throw SecurityException("WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB.")
+        }
+        return Settings.Global.putInt(contentResolver, key, if (value) 1 else 0)
+    }
 
     private fun setVolte(enabled: Boolean): Boolean {
         val results = listOf(
@@ -72,8 +80,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             var enabled by remember { mutableStateOf(allEnabled()) }
+            var secureGranted by remember { mutableStateOf(hasSecureSettingsPermission()) }
             var status by remember {
-                mutableStateOf(if (enabled) "Đã đọc thấy đủ 4 cờ đang bật." else "Chưa bật đủ 4 cờ VoLTE.")
+                mutableStateOf(
+                    if (!secureGranted) "Chưa được cấp WRITE_SECURE_SETTINGS. Hãy cấp quyền từ WebADB."
+                    else if (enabled) "Đã đọc thấy đủ 4 cờ đang bật."
+                    else "Chưa bật đủ 4 cờ VoLTE."
+                )
             }
 
             MaterialTheme {
@@ -94,6 +107,7 @@ class MainActivity : ComponentActivity() {
                                 Text(if (enabled) "ĐỦ 4 CỜ ĐANG BẬT" else "CHƯA ĐỦ 4 CỜ BẬT")
                             }
                             Switch(
+                                enabled = secureGranted,
                                 checked = enabled,
                                 onCheckedChange = { wantEnabled ->
                                     runCatching {
@@ -107,8 +121,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }.onFailure { e ->
                                         enabled = allEnabled()
+                                        secureGranted = hasSecureSettingsPermission()
                                         status = if (e is SecurityException) {
-                                            "Không đủ quyền ghi cờ hệ thống. Cần quyền phù hợp; quyền trong Manifest không tự cấp quyền."
+                                            "Chưa có WRITE_SECURE_SETTINGS. Hãy cấp quyền từ WebADB rồi mở lại app."
                                         } else {
                                             "Không thể đổi cờ: " + (e.message ?: e.javaClass.simpleName)
                                         }
@@ -120,6 +135,7 @@ class MainActivity : ComponentActivity() {
 
                     Text(status)
                     Text("Trạng thái cờ hiện tại:", style = MaterialTheme.typography.titleMedium)
+                    Text("WRITE_SECURE_SETTINGS = " + if (secureGranted) "GRANTED" else "DENIED")
                     Text("volte_vt_enabled = " + read(KEY_VOLTE_VT))
                     Text("enhanced_4g_mode_enabled = " + read(KEY_ENHANCED_4G))
                     Text("volte_enabled = " + read(KEY_VOLTE))
@@ -127,8 +143,13 @@ class MainActivity : ComponentActivity() {
 
                     Button(
                         onClick = {
+                            secureGranted = hasSecureSettingsPermission()
                             enabled = allEnabled()
-                            status = if (enabled) "Đã đọc thấy đủ 4 cờ đang bật." else "Chưa bật đủ 4 cờ VoLTE."
+                            status = when {
+                                !secureGranted -> "WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB."
+                                enabled -> "Đã đọc thấy đủ 4 cờ đang bật."
+                                else -> "Quyền SYSTEM đã có nhưng chưa đủ 4 cờ VoLTE."
+                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("KIỂM TRA CỜ") }
