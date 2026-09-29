@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
                 ComponentName("com.android.phone", "com.android.phone.settings.MobileNetworkSettings")
             ),
             Intent().setComponent(
-                ComponentName("com.android.phone", "com.android.phone.settings.Settings$MobileNetworkSettingsActivity")
+                ComponentName("com.android.phone", "com.android.phone.settings.Settings\$MobileNetworkSettingsActivity")
             ),
             Intent("android.settings.NETWORK_OPERATOR_SETTINGS"),
             Intent(Settings.ACTION_WIRELESS_SETTINGS)
