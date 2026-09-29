@@ -1,5 +1,6 @@
 package vn.appleseed.volte
 
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -42,6 +43,29 @@ class MainActivity : ComponentActivity() {
             read(KEY_CARRIER_VT)
         ).all { it == enabled }
         return results.all { it } && readBackMatches
+    }
+
+    private fun openVolteSettings() {
+        // Samsung/Android không dùng một Activity duy nhất cho mọi phiên bản.
+        // Thử màn hình Mobile Network cụ thể trước, sau đó fallback về Settings chuẩn.
+        val candidates = listOf(
+            Intent().setComponent(
+                ComponentName("com.android.phone", "com.android.phone.settings.MobileNetworkSettings")
+            ),
+            Intent().setComponent(
+                ComponentName("com.android.phone", "com.android.phone.settings.Settings$MobileNetworkSettingsActivity")
+            ),
+            Intent("android.settings.NETWORK_OPERATOR_SETTINGS"),
+            Intent(Settings.ACTION_WIRELESS_SETTINGS)
+        )
+
+        for (intent in candidates) {
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(intent)
+                return
+            }
+        }
+        throw IllegalStateException("ROM không cung cấp màn hình Mobile Network/VoLTE")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,13 +141,14 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = {
                             runCatching {
-                                startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                                openVolteSettings()
+                                status = "Đã mở màn hình mạng/VoLTE của máy."
                             }.onFailure { e ->
-                                status = "Không mở được Cài đặt mạng: " + (e.message ?: e.javaClass.simpleName)
+                                status = "Không mở được Cài đặt VoLTE: " + (e.message ?: e.javaClass.simpleName)
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("MỞ CÀI ĐẶT MẠNG (THỦ CÔNG)") }
+                    ) { Text("📶 MỞ CÀI ĐẶT VoLTE") }
 
                     Text(
                         "Lưu ý: ghi được cờ không chứng minh VoLTE hoạt động. IMS thực tế phụ thuộc SIM, nhà mạng, cấu hình nhà mạng, provisioning và modem.",
