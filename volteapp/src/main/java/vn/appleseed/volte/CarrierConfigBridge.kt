@@ -85,7 +85,7 @@ object CarrierConfigBridge {
             }
         }
 
-        val slot = loader.getSlotIndexForSubId(subId)
+        val slot = SubscriptionManager.getSlotIndex(subId)
         telephony().resetIms(slot)
 
         return "CarrierConfig OK · subId=" + subId + " · slot=" + slot + " · IMS reset OK"
