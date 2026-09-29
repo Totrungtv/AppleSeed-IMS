@@ -499,48 +499,86 @@ class AndroidTool(QMainWindow):
         apk=self.base/"apps"/"AppleSeed_VoLTE.apk"
         if not apk.exists():
             QMessageBox.warning(self,"APK","Thiếu apps/AppleSeed_VoLTE.apk");return
+
         def w():
-            out=["===== CÀI APP VoLTE — OPPO/COLOROS ====="]
-            remote="/sdcard/AppleSeed_VoLTE.apk"
+            out=["===== CÀI APP VoLTE — APPLE SEED ====="]
+            original_verifier={}
             try:
-                self._volte_progress(10,"Push APK")
-                rc,o=self.run(["-s",self.serial,"push",str(apk),remote],60)
-                out.append(f"PUSH rc={rc}\n{o}")
-                if rc!=0: raise RuntimeError(o or "ADB push thất bại")
+                self._volte_progress(10,"Cài AppleSeed_VoLTE.apk bằng ADB")
+                rc,o=self.run(["-s",self.serial,"install","-r","-d","-g","--no-incremental",str(apk)],120)
+                out.append(f"\n--- ADB INSTALL #1 rc={rc} ---\n{o}")
 
-                # ColorOS has its own SafeCenter verification service. On this ROM,
-                # pm install/adb install can be rejected even when Google verifier is disabled.
-                # Try PackageInstaller via content URI first, then legacy file URI.
-                self._volte_progress(45,"Mở trình cài ColorOS")
-                rc,o=self.run(["-s",self.serial,"shell","am","start",
-                    "-a","android.intent.action.VIEW",
-                    "-d","file:///sdcard/AppleSeed_VoLTE.apk",
-                    "-t","application/vnd.android.package-archive",
-                    "-f","0x10000000"],15)
-                out.append(f"INSTALLER rc={rc}\n{o}")
+                verification_failure=("INSTALL_FAILED_VERIFICATION_FAILURE" in o or
+                                       "verification failure" in o.lower() or
+                                       "Package Verification Result" in o)
+                if rc!=0 and verification_failure:
+                    self._volte_progress(28,"Tắt verifier ADB tạm thời")
+                    for key in ("verifier_verify_adb_installs","package_verifier_enable"):
+                        try:
+                            _,v=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
+                            original_verifier[key]=v.strip()
+                            self.run(["-s",self.serial,"shell","settings","put","global",key,"0"],8)
+                            out.append(f"SET {key}=0 (cũ: {v.strip() or 'unknown'})")
+                        except Exception as e: out.append(f"SET {key}=0 ERROR: {e}")
 
-                # Also open OPPO's app installation/security settings so the user can
-                # explicitly allow installation if SafeCenter requires it.
-                self._volte_progress(75,"Mở cài đặt bảo mật OPPO")
-                rc2,o2=self.run(["-s",self.serial,"shell","am","start",
-                    "-a","android.settings.SECURITY_SETTINGS"],15)
-                out.append(f"SECURITY SETTINGS rc={rc2}\n{o2}")
+                    rc2,o2=self.run(["-s",self.serial,"install","-r","-d","-g","--no-incremental",str(apk)],120)
+                    out.append(f"\n--- ADB INSTALL #2 rc={rc2} ---\n{o2}")
+                    if rc2==0: rc,o=rc2,o2
 
-                out.append("\nSafeCenter của OPPO đang có VerifyControlService; ADB/pm bị nó chặn.")
-                out.append("APK đã nằm tại /sdcard/AppleSeed_VoLTE.apk.")
-                out.append("Nếu trình cài chưa hiện, mở File Manager > APK và bấm Cài đặt trực tiếp.")
-                self.post(lambda:QMessageBox.information(
-                    self,"Apple Seed VoLTE",
-                    "Đã đưa APK vào máy.\\n\\n"
-                    "OPPO đang chặn cài qua ADB bằng SafeCenter.\\n"
-                    "Nếu màn hình cài chưa hiện: mở Quản lý tệp → AppleSeed_VoLTE.apk → Cài đặt."
-                ))
-            except Exception as e:
-                out.append("LỖI: "+str(e))
-                self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APK lỗi",e))
-            finally:
+                for key,v in original_verifier.items():
+                    if v in ("0","1"):
+                        try:self.run(["-s",self.serial,"shell","settings","put","global",key,v],8)
+                        except:pass
+
+                if rc==0:
+                    pkg="package:vn.appleseed.volte" in self.shell("pm list packages vn.appleseed.volte",8)
+                    if not pkg: raise RuntimeError("ADB báo thành công nhưng không thấy package vn.appleseed.volte.")
+                    self._volte_progress(100,"AppleSeed VoLTE đã cài")
+                    out.append("\n✅ APP ĐÃ CÀI THÀNH CÔNG.")
+                    self.showout(self.volte_out,"CÀI APP VoLTE","\n".join(out))
+                    self.log("AppleSeed VoLTE: installed successfully.")
+                    return
+
+                remote="/sdcard/AppleSeed/APK/AppleSeed_VoLTE.apk"
+                self._volte_progress(55,"ADB bị ROM chặn — đưa APK vào máy")
+                self.run(["-s",self.serial,"shell","mkdir","-p","/sdcard/AppleSeed/APK"],15)
+                rc_push,o_push=self.run(["-s",self.serial,"push",str(apk),remote],90)
+                out.append(f"\n--- PUSH rc={rc_push} ---\n{o_push}")
+                if rc_push!=0: raise RuntimeError(o_push or "ADB push thất bại")
+
+                self._volte_progress(75,"Mở trình cài hệ thống")
+                launched=False
+                for action in ("android.intent.action.VIEW","android.intent.action.INSTALL_PACKAGE"):
+                    rc_i,o_i=self.run(["-s",self.serial,"shell","am","start",
+                        "-a",action,"-d","file://"+remote,
+                        "-t","application/vnd.android.package-archive","-f","0x10000000"],20)
+                    out.append(f"\n--- {action} rc={rc_i} ---\n{o_i}")
+                    if rc_i==0:
+                        launched=True
+                        break
+
+                out.append("\nAPK: "+remote)
+                if launched:
+                    out.append("⚠ ROM/SafeCenter chặn cài im lặng; Package Installer đã mở.")
+                    self.post(lambda:QMessageBox.information(
+                        self,"Apple Seed VoLTE",
+                        "Đã mở trình cài hệ thống. Nếu máy hỏi quyền bảo mật, cho phép cài APK rồi bấm CÀI ĐẶT."
+                    ))
+                else:
+                    self.post(lambda:QMessageBox.warning(
+                        self,"Cài AppleSeed VoLTE",
+                        "ROM chặn cả ADB install và Package Installer. APK đã được chép vào /sdcard/AppleSeed/APK/."
+                    ))
                 self._volte_progress(100,"Hoàn tất")
-                self.showout(self.volte_out,"CÀI APP VoLTE","\n\n".join(out))
+                self.showout(self.volte_out,"CÀI APP VoLTE","\n".join(out))
+            except Exception as e:
+                for key,v in original_verifier.items():
+                    if v in ("0","1"):
+                        try:self.run(["-s",self.serial,"shell","settings","put","global",key,v],8)
+                        except:pass
+                out.append("\n❌ LỖI: "+str(e))
+                self.showout(self.volte_out,"CÀI APP VoLTE","\n".join(out))
+                self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APP VoLTE lỗi",e))
         self.threaded(w)
 
     def open_volte_app(self):
@@ -563,7 +601,91 @@ class AndroidTool(QMainWindow):
         if not self.require():return
         p,_=QFileDialog.getOpenFileName(self,"Chọn APK","","APK (*.apk)")
         if not p:return
-        def w():rc,o=self.run(["-s",self.serial,"install","-r","-d",p],90);self.showout(self.app_out,"CÀI APK",f"rc={rc}\n{o}")
+        def w():
+            out=["===== APPLE SEED APK INSTALLER =====",f"FILE: {p}"]
+            original_verifier={}
+            try:
+                self._volte_progress(10,"Kiểm tra APK")
+                rc,o=self.run(["-s",self.serial,"install","-r","-d","-g","--no-incremental",p],120)
+                out.append(f"\n--- ADB INSTALL #1 rc={rc} ---\n{o}")
+
+                verification_failure=("INSTALL_FAILED_VERIFICATION_FAILURE" in o or
+                                       "verification failure" in o.lower() or
+                                       "Package Verification Result" in o)
+                if rc != 0 and verification_failure:
+                    self._volte_progress(30,"Tắt xác minh APK qua ADB và thử lại")
+                    for key in ("verifier_verify_adb_installs","package_verifier_enable"):
+                        try:
+                            _,v=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
+                            original_verifier[key]=v.strip()
+                            self.run(["-s",self.serial,"shell","settings","put","global",key,"0"],8)
+                            out.append(f"SET {key}=0 (cũ: {v.strip() or 'unknown'})")
+                        except Exception as e:
+                            out.append(f"SET {key}=0 ERROR: {e}")
+
+                    rc2,o2=self.run(["-s",self.serial,"install","-r","-d","-g","--no-incremental",p],120)
+                    out.append(f"\n--- ADB INSTALL #2 rc={rc2} ---\n{o2}")
+                    if rc2==0: rc,o=rc2,o2
+
+                for key,v in original_verifier.items():
+                    if v in ("0","1"):
+                        try:self.run(["-s",self.serial,"shell","settings","put","global",key,v],8)
+                        except:pass
+
+                if rc==0:
+                    self._volte_progress(100,"Cài APK thành công")
+                    out.append("\n✅ CÀI APK THÀNH CÔNG BẰNG ADB.")
+                    self.showout(self.app_out,"CÀI APK","\n".join(out))
+                    self.log(f"APK installed: {Path(p).name}")
+                    return
+
+                remote="/sdcard/AppleSeed/APK/"+Path(p).name
+                self._volte_progress(55,"ADB bị chặn — đưa APK vào điện thoại")
+                self.run(["-s",self.serial,"shell","mkdir","-p","/sdcard/AppleSeed/APK"],15)
+                rc_push,o_push=self.run(["-s",self.serial,"push",p,remote],90)
+                out.append(f"\n--- PUSH rc={rc_push} ---\n{o_push}")
+                if rc_push!=0: raise RuntimeError(o_push or "Không push được APK")
+
+                self._volte_progress(75,"Mở trình cài hệ thống")
+                attempts=[
+                    ["-s",self.serial,"shell","am","start","-a","android.intent.action.VIEW",
+                     "-d","file://"+remote,"-t","application/vnd.android.package-archive","-f","0x10000000"],
+                    ["-s",self.serial,"shell","am","start","-a","android.intent.action.INSTALL_PACKAGE",
+                     "-d","file://"+remote,"-t","application/vnd.android.package-archive","-f","0x10000000"]
+                ]
+                launched=False
+                for cmd in attempts:
+                    rc_i,o_i=self.run(cmd,20)
+                    out.append(f"\n--- PACKAGE INSTALLER rc={rc_i} ---\n{o_i}")
+                    if rc_i==0:
+                        launched=True
+                        break
+
+                if launched:
+                    out.append("\n⚠ ROM/SafeCenter chặn cài im lặng; trình cài hệ thống đã mở.")
+                    self.post(lambda:QMessageBox.information(
+                        self,"Apple Seed — Cài APK",
+                        "ADB bị ROM/SafeCenter chặn cài trực tiếp.\n\n"
+                        "Apple Seed đã đưa APK vào máy và mở trình cài hệ thống.\n"
+                        "Nếu có hộp thoại bảo mật, cho phép cài ứng dụng rồi bấm CÀI ĐẶT."
+                    ))
+                else:
+                    out.append("\n❌ Không gọi được Package Installer của ROM.")
+                    self.post(lambda:QMessageBox.warning(
+                        self,"Cài APK lỗi",
+                        "ROM đã chặn cả ADB install và Package Installer.\n"
+                        "APK vẫn nằm trong /sdcard/AppleSeed/APK/ để cài thủ công."
+                    ))
+                self._volte_progress(100,"Hoàn tất")
+                self.showout(self.app_out,"CÀI APK","\n".join(out))
+            except Exception as e:
+                for key,v in original_verifier.items():
+                    if v in ("0","1"):
+                        try:self.run(["-s",self.serial,"shell","settings","put","global",key,v],8)
+                        except:pass
+                out.append("\n❌ LỖI: "+str(e))
+                self.showout(self.app_out,"CÀI APK","\n".join(out))
+                self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APK lỗi",e))
         self.threaded(w)
 
     def file_ls(self):
