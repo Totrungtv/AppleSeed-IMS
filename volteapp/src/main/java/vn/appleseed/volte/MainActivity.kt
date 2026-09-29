@@ -4,6 +4,8 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import java.io.InputStream
+import rikka.shizuku.Shizuku
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -18,8 +20,12 @@ private const val KEY_VOLTE_VT = "volte_vt_enabled"
 private const val KEY_ENHANCED_4G = "enhanced_4g_mode_enabled"
 private const val KEY_VOLTE = "volte_enabled"
 private const val KEY_CARRIER_VT = "carrier_vt_enabled"
+private const val SHIZUKU_REQUEST_CODE = 4107
 
 class MainActivity : ComponentActivity() {
+    private var shizukuGrantedState by mutableStateOf(false)
+    private var shizukuRunningState by mutableStateOf(false)
+
     private fun read(key: String): Boolean =
         runCatching { Settings.Global.getInt(contentResolver, key, 0) == 1 }.getOrDefault(false)
 
@@ -27,38 +33,101 @@ class MainActivity : ComponentActivity() {
         checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
-    // Không yêu cầu cả 4 key: nhiều ROM/ColorOS chỉ dùng một hoặc hai key chính.
+    private fun shizukuRunning(): Boolean =
+        runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+
+    private fun shizukuGranted(): Boolean =
+        shizukuRunning() && runCatching {
+            Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+
+    private fun refreshShizukuState() {
+        shizukuRunningState = shizukuRunning()
+        shizukuGrantedState = shizukuGranted()
+    }
+
+    private fun requestShizukuPermission() {
+        refreshShizukuState()
+        if (!shizukuRunningState) {
+            throw IllegalStateException("Shizuku chưa chạy. Hãy mở Shizuku và Start bằng ADB/USB hoặc Wireless ADB.")
+        }
+        if (!shizukuGrantedState) {
+            Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
+        }
+    }
+
+    /**
+     * Chạy lệnh với identity của Shizuku backend (ADB shell hoặc root).
+     * newProcess đã deprecated ở Shizuku 13 và dự kiến bị bỏ ở API 14,
+     * nên gọi qua reflection để bản thử không bị lỗi compile.
+     */
+    private fun runShizukuCommand(vararg args: String): String {
+        refreshShizukuState()
+        if (!shizukuRunningState) {
+            throw IllegalStateException("Shizuku chưa chạy.")
+        }
+        if (!shizukuGrantedState) {
+            throw SecurityException("Apple Seed chưa được cấp quyền Shizuku.")
+        }
+
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val remote = method.invoke(null, args, null, null)
+            ?: throw IllegalStateException("Shizuku không tạo được process.")
+
+        return try {
+            val input = remote.javaClass.getMethod("getInputStream").invoke(remote) as InputStream
+            val error = remote.javaClass.getMethod("getErrorStream").invoke(remote) as InputStream
+            val waitFor = remote.javaClass.getMethod("waitFor")
+            waitFor.invoke(remote)
+            val outText = input.bufferedReader().use { it.readText() }.trim()
+            val errText = error.bufferedReader().use { it.readText() }.trim()
+            if (errText.isNotEmpty()) "ERROR: $errText" else outText
+        } finally {
+            runCatching { remote.javaClass.getMethod("destroy").invoke(remote) }
+        }
+    }
+
+    private fun writeViaShizuku(key: String, value: Boolean): Boolean {
+        val result = runShizukuCommand("settings", "put", "global", key, if (value) "1" else "0")
+        if (result.startsWith("ERROR:", ignoreCase = true)) {
+            throw IllegalStateException(result)
+        }
+        return read(key) == value
+    }
+
     private fun allEnabled() =
         read(KEY_VOLTE_VT) || read(KEY_ENHANCED_4G)
 
-    private fun write(key: String, value: Boolean): Boolean {
-        if (!hasSecureSettingsPermission()) {
-            throw SecurityException("WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB.")
-        }
-        return Settings.Global.putInt(contentResolver, key, if (value) 1 else 0)
-    }
-
     private fun setVolte(enabled: Boolean): Boolean {
-        if (!hasSecureSettingsPermission()) {
-            throw SecurityException("WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB.")
+        if (hasSecureSettingsPermission()) {
+            for (key in listOf(KEY_VOLTE_VT, KEY_ENHANCED_4G, KEY_VOLTE, KEY_CARRIER_VT)) {
+                runCatching {
+                    Settings.Global.putInt(contentResolver, key, if (enabled) 1 else 0)
+                }
+            }
+        } else {
+            refreshShizukuState()
+            if (!shizukuGrantedState) {
+                throw SecurityException("Chưa có WRITE_SECURE_SETTINGS và Shizuku chưa được cấp quyền.")
+            }
+            for (key in listOf(KEY_VOLTE_VT, KEY_ENHANCED_4G, KEY_VOLTE, KEY_CARRIER_VT)) {
+                writeViaShizuku(key, enabled)
+            }
         }
 
-        val results = linkedMapOf<String, Boolean>()
-        for (key in listOf(KEY_VOLTE_VT, KEY_ENHANCED_4G, KEY_VOLTE, KEY_CARRIER_VT)) {
-            results[key] = runCatching {
-                Settings.Global.putInt(contentResolver, key, if (enabled) 1 else 0)
-            }.getOrDefault(false)
-        }
-
-        // Không bắt buộc mọi ROM phải có đủ 4 key. Trên một số ColorOS chỉ
-        // volte_vt_enabled/enhanced_4g_mode_enabled tồn tại và có tác dụng.
         val primary = read(KEY_VOLTE_VT)
         val enhanced = read(KEY_ENHANCED_4G)
         return if (enabled) primary || enhanced else !primary && !enhanced
     }
+
     private fun openVolteSettings() {
-        // Samsung/Android không dùng một Activity duy nhất cho mọi phiên bản.
-        // Thử màn hình Mobile Network cụ thể trước, sau đó fallback về Settings chuẩn.
         val candidates = listOf(
             Intent().setComponent(
                 ComponentName("com.android.phone", "com.android.phone.settings.MobileNetworkSettings")
@@ -81,15 +150,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
+            if (requestCode == SHIZUKU_REQUEST_CODE) {
+                shizukuGrantedState =
+                    grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
+                shizukuRunningState = shizukuRunning()
+            }
+        }
+
+        refreshShizukuState()
+
         setContent {
             var enabled by remember { mutableStateOf(allEnabled()) }
             var secureGranted by remember { mutableStateOf(hasSecureSettingsPermission()) }
             var status by remember {
-                mutableStateOf(
-                    if (!secureGranted) "CHƯA CÓ QUYỀN GHI CỜ HỆ THỐNG — hãy cấp quyền từ WebADB."
-                    else if (enabled) "Cờ VoLTE chính đang BẬT."
-                    else "Cờ VoLTE chính đang TẮT."
-                )
+                mutableStateOf("Đang kiểm tra quyền…")
             }
 
             MaterialTheme {
@@ -98,7 +174,34 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text("🍎 Apple Seed VoLTE", style = MaterialTheme.typography.headlineMedium)
-                    Text("Hai chức năng riêng: điều khiển cờ và mở Cài đặt mạng để tự thao tác.")
+                    Text("Hỗ trợ 2 đường: WRITE_SECURE_SETTINGS trực tiếp hoặc Shizuku/ADB shell.")
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("SHIZUKU BACKEND", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                when {
+                                    shizukuGrantedState -> "✓ Shizuku đang chạy và Apple Seed đã được cấp quyền."
+                                    shizukuRunningState -> "Shizuku đang chạy nhưng Apple Seed chưa được cấp quyền."
+                                    else -> "Shizuku chưa chạy."
+                                }
+                            )
+                            Button(
+                                onClick = {
+                                    runCatching {
+                                        requestShizukuPermission()
+                                        status = "Đã gửi yêu cầu quyền Shizuku. Hãy bấm Cho phép nếu hộp thoại xuất hiện."
+                                    }.onFailure {
+                                        status = it.message ?: "Không thể yêu cầu Shizuku."
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(if (shizukuRunningState) "🔐 CẤP QUYỀN SHIZUKU" else "▶ KIỂM TRA SHIZUKU") }
+                        }
+                    }
 
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -106,30 +209,32 @@ class MainActivity : ComponentActivity() {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column {
-                                Text("CỜ VoLTE (ADB/QUYỀN HỆ THỐNG)", style = MaterialTheme.typography.titleMedium)
+                                Text("CỜ VoLTE", style = MaterialTheme.typography.titleMedium)
                                 Text(if (enabled) "CỜ VoLTE CHÍNH ĐANG BẬT" else "CỜ VoLTE CHÍNH ĐANG TẮT")
+                                Text(
+                                    if (secureGranted) "Nguồn: WRITE_SECURE_SETTINGS"
+                                    else if (shizukuGrantedState) "Nguồn: Shizuku / ADB shell"
+                                    else "Chưa có backend ghi"
+                                )
                             }
                             Switch(
-                                enabled = secureGranted,
+                                enabled = secureGranted || shizukuGrantedState,
                                 checked = enabled,
                                 onCheckedChange = { wantEnabled ->
                                     runCatching {
                                         val accepted = setVolte(wantEnabled)
                                         enabled = allEnabled()
-                                        status = when {
-                                            accepted && enabled == wantEnabled ->
-                                                "Đã ghi và đọc lại cờ VoLTE chính: " + if (wantEnabled) "BẬT." else "TẮT."
-                                            else ->
-                                                "Đã thử ghi nhưng ROM không xác nhận cờ VoLTE chính. Xem 4 dòng trạng thái bên dưới."
+                                        secureGranted = hasSecureSettingsPermission()
+                                        status = if (accepted && enabled == wantEnabled) {
+                                            "✓ Đã ghi và đọc lại cờ VoLTE: " + if (wantEnabled) "BẬT." else "TẮT."
+                                        } else {
+                                            "⚠ Đã ghi thử nhưng ROM không xác nhận cờ chính."
                                         }
                                     }.onFailure { e ->
                                         enabled = allEnabled()
                                         secureGranted = hasSecureSettingsPermission()
-                                        status = if (e is SecurityException) {
-                                            "Chưa có WRITE_SECURE_SETTINGS. Hãy cấp quyền từ WebADB rồi mở lại app."
-                                        } else {
-                                            "Không thể đổi cờ: " + (e.message ?: e.javaClass.simpleName)
-                                        }
+                                        refreshShizukuState()
+                                        status = e.message ?: e.javaClass.simpleName
                                     }
                                 }
                             )
@@ -137,8 +242,13 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Text(status)
-                    Text("TRẠNG THÁI QUYỀN & CỜ HỆ THỐNG:", style = MaterialTheme.typography.titleMedium)
+                    Text("TRẠNG THÁI:", style = MaterialTheme.typography.titleMedium)
                     Text("WRITE_SECURE_SETTINGS = " + if (secureGranted) "GRANTED" else "DENIED")
+                    Text("Shizuku = " + when {
+                        shizukuGrantedState -> "GRANTED"
+                        shizukuRunningState -> "RUNNING / CHƯA GRANT"
+                        else -> "OFF"
+                    })
                     Text("volte_vt_enabled = " + read(KEY_VOLTE_VT))
                     Text("enhanced_4g_mode_enabled = " + read(KEY_ENHANCED_4G))
                     Text("volte_enabled = " + read(KEY_VOLTE))
@@ -146,22 +256,17 @@ class MainActivity : ComponentActivity() {
 
                     Button(
                         onClick = {
+                            refreshShizukuState()
                             secureGranted = hasSecureSettingsPermission()
                             enabled = allEnabled()
-                            status = when {
-                                !secureGranted -> "WRITE_SECURE_SETTINGS chưa được cấp. Hãy chạy CẤP QUYỀN SYSTEM từ WebADB."
-                                enabled -> "Cờ VoLTE chính đã BẬT."
-                                else -> "Đã có quyền SYSTEM nhưng cờ VoLTE chính vẫn TẮT."
-                            }
+                            status = "Đã làm mới trạng thái quyền và cờ."
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("KIỂM TRA CỜ") }
+                    ) { Text("🔄 KIỂM TRA LẠI") }
 
                     Divider()
 
                     Text("CÀI ĐẶT VoLTE CỦA ANDROID", style = MaterialTheme.typography.titleMedium)
-                    Text("Nút này chỉ mở Cài đặt mạng. Ông tự tìm và bật/tắt VoLTE trên máy; APK không tự đổi công tắc hệ thống ở đây.")
-
                     Button(
                         onClick = {
                             runCatching {
@@ -175,7 +280,7 @@ class MainActivity : ComponentActivity() {
                     ) { Text("📶 MỞ CÀI ĐẶT VoLTE") }
 
                     Text(
-                        "Lưu ý: ghi được cờ không chứng minh VoLTE hoạt động. IMS thực tế phụ thuộc SIM, nhà mạng, cấu hình nhà mạng, provisioning và modem.",
+                        "Lưu ý: bật được cờ không đồng nghĩa IMS đã hoạt động. SIM, nhà mạng, provisioning và modem vẫn quyết định VoLTE thực tế.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
