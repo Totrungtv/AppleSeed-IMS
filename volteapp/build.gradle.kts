@@ -8,9 +8,9 @@ android {
     defaultConfig {
         applicationId = "vn.appleseed.volte"
         minSdk = 23
-        targetSdk = 36
-        versionCode = 5
-        versionName = "1.1.3"
+        targetSdk = 28
+        versionCode = 6
+        versionName = "1.1.4"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
