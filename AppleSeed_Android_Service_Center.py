@@ -446,6 +446,14 @@ class AndroidTool(QMainWindow):
                         rc,o=self.run(["-s",self.serial,"shell",proc,"-Djava.class.path="+remote,"/system/bin","com.hbg.volte.VolteFixer","ENABLE"],25)
                         out.append(f"{proc} rc={rc}\n{o}")
                         if rc==0:break
+                self._volte_progress(52,"Cấp WRITE_SECURE_SETTINGS cho Apple Seed VoLTE")
+                try:
+                    rc_g,o_g=self.run(["-s",self.serial,"shell","pm","grant","vn.appleseed.volte","android.permission.WRITE_SECURE_SETTINGS"],12)
+                    out.append(f"\n--- GRANT WRITE_SECURE_SETTINGS rc={rc_g} ---\n{o_g}")
+                    if rc_g!=0:
+                        out.append("⚠ ROM từ chối cấp quyền SYSTEM; tiếp tục kiểm tra cờ và mở Cài đặt VoLTE.")
+                except Exception as e:
+                    out.append("\n--- GRANT WRITE_SECURE_SETTINGS ---\nERROR: "+str(e))
                 self._volte_progress(55,"Áp dụng VoLTE flags bằng ADB shell")
                 for cmd in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
                     try:
