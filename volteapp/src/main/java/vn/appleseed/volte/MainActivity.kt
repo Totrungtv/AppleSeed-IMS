@@ -25,15 +25,23 @@ class MainActivity : ComponentActivity() {
     private fun allEnabled() =
         read(KEY_VOLTE_VT) && read(KEY_ENHANCED_4G) && read(KEY_VOLTE) && read(KEY_CARRIER_VT)
 
-    private fun write(key: String, value: Boolean) {
+    private fun write(key: String, value: Boolean): Boolean =
         Settings.Global.putInt(contentResolver, key, if (value) 1 else 0)
-    }
 
-    private fun setVolte(enabled: Boolean) {
-        write(KEY_VOLTE_VT, enabled)
-        write(KEY_ENHANCED_4G, enabled)
-        write(KEY_VOLTE, enabled)
-        write(KEY_CARRIER_VT, enabled)
+    private fun setVolte(enabled: Boolean): Boolean {
+        val results = listOf(
+            write(KEY_VOLTE_VT, enabled),
+            write(KEY_ENHANCED_4G, enabled),
+            write(KEY_VOLTE, enabled),
+            write(KEY_CARRIER_VT, enabled)
+        )
+        val readBackMatches = listOf(
+            read(KEY_VOLTE_VT),
+            read(KEY_ENHANCED_4G),
+            read(KEY_VOLTE),
+            read(KEY_CARRIER_VT)
+        ).all { it == enabled }
+        return results.all { it } && readBackMatches
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,7 +49,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             var enabled by remember { mutableStateOf(allEnabled()) }
             var status by remember {
-                mutableStateOf(if (enabled) "VoLTE flags đã được Apple Seed Tool bật." else "Chưa bật đủ cờ VoLTE.")
+                mutableStateOf(if (enabled) "Đã đọc thấy đủ 4 cờ đang bật." else "Chưa bật đủ 4 cờ VoLTE.")
             }
 
             MaterialTheme {
@@ -50,7 +58,7 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text("🍎 Apple Seed VoLTE", style = MaterialTheme.typography.headlineMedium)
-                    Text("Trạng thái VoLTE / 4G trên thiết bị.")
+                    Text("Hai chức năng riêng: điều khiển cờ và mở Cài đặt mạng để tự thao tác.")
 
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -58,28 +66,27 @@ class MainActivity : ComponentActivity() {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column {
-                                Text("VoLTE", style = MaterialTheme.typography.titleLarge)
-                                Text(if (enabled) "ĐANG BẬT" else "CHƯA BẬT ĐỦ")
+                                Text("CỜ VoLTE (ADB/QUYỀN HỆ THỐNG)", style = MaterialTheme.typography.titleMedium)
+                                Text(if (enabled) "ĐỦ 4 CỜ ĐANG BẬT" else "CHƯA ĐỦ 4 CỜ BẬT")
                             }
                             Switch(
                                 checked = enabled,
                                 onCheckedChange = { wantEnabled ->
                                     runCatching {
-                                        setVolte(wantEnabled)
+                                        val accepted = setVolte(wantEnabled)
                                         enabled = allEnabled()
-                                        status = if (enabled) {
-                                            "VoLTE đã BẬT."
-                                        } else if (!wantEnabled && !allEnabled()) {
-                                            "VoLTE đã TẮT."
-                                        } else {
-                                            "Đã gửi lệnh nhưng thiết bị chưa xác nhận đủ cờ VoLTE."
+                                        status = when {
+                                            accepted && enabled == wantEnabled ->
+                                                "Đã ghi và đọc lại đủ 4 cờ: " + if (wantEnabled) "BẬT." else "TẮT."
+                                            else ->
+                                                "Không xác nhận được đủ 4 cờ. Máy có thể từ chối quyền ghi hoặc không hỗ trợ các cờ này."
                                         }
                                     }.onFailure { e ->
                                         enabled = allEnabled()
                                         status = if (e is SecurityException) {
-                                            "Không đủ quyền ghi cờ hệ thống. Hãy cài lại bằng Apple Seed Service Center để thử cấp quyền ADB."
+                                            "Không đủ quyền ghi cờ hệ thống. Cần quyền phù hợp; quyền trong Manifest không tự cấp quyền."
                                         } else {
-                                            "Không thể đổi VoLTE: " + (e.message ?: e.javaClass.simpleName)
+                                            "Không thể đổi cờ: " + (e.message ?: e.javaClass.simpleName)
                                         }
                                     }
                                 }
@@ -88,32 +95,38 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Text(status)
-                    Text("Cờ hiện tại:", style = MaterialTheme.typography.titleMedium)
+                    Text("Trạng thái cờ hiện tại:", style = MaterialTheme.typography.titleMedium)
                     Text("volte_vt_enabled = " + read(KEY_VOLTE_VT))
                     Text("enhanced_4g_mode_enabled = " + read(KEY_ENHANCED_4G))
                     Text("volte_enabled = " + read(KEY_VOLTE))
                     Text("carrier_vt_enabled = " + read(KEY_CARRIER_VT))
 
-                    Text(
-                        "Công tắc ghi 4 cờ VoLTE phổ biến. IMS thực tế vẫn phụ thuộc SIM, nhà mạng, provisioning và modem.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
                     Button(
                         onClick = {
                             enabled = allEnabled()
-                            status = if (enabled) "Đã bật đủ 4 cờ VoLTE." else "Chưa bật đủ 4 cờ VoLTE."
+                            status = if (enabled) "Đã đọc thấy đủ 4 cờ đang bật." else "Chưa bật đủ 4 cờ VoLTE."
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("KIỂM TRA LẠI") }
+                    ) { Text("KIỂM TRA CỜ") }
+
+                    Divider()
+
+                    Text("CÀI ĐẶT VoLTE CỦA ANDROID", style = MaterialTheme.typography.titleMedium)
+                    Text("Nút này chỉ mở Cài đặt mạng. Ông tự tìm và bật/tắt VoLTE trên máy; APK không tự đổi công tắc hệ thống ở đây.")
 
                     Button(
-                        onClick = { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) },
+                        onClick = {
+                            runCatching {
+                                startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
+                            }.onFailure { e ->
+                                status = "Không mở được Cài đặt mạng: " + (e.message ?: e.javaClass.simpleName)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("MỞ CÀI ĐẶT MẠNG") }
+                    ) { Text("MỞ CÀI ĐẶT MẠNG (THỦ CÔNG)") }
 
                     Text(
-                        "Lưu ý: các cờ hệ thống không tự chứng minh IMS đã đăng ký. VoLTE còn phụ thuộc SIM, nhà mạng, carrier config, provisioning và modem.",
+                        "Lưu ý: ghi được cờ không chứng minh VoLTE hoạt động. IMS thực tế phụ thuộc SIM, nhà mạng, cấu hình nhà mạng, provisioning và modem.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
