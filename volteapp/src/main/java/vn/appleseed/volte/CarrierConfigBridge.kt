@@ -149,10 +149,14 @@ object CarrierConfigBridge {
             }
             .getOrThrow()
 
-        telephony.javaClass.getMethod(
-            "resetIms",
-            Int::class.javaPrimitiveType
-        ).invoke(telephony, slot)
+        // resetIms is vendor/framework dependent on ColorOS. Do not fail the
+        // CarrierConfig operation if this optional method is absent.
+        val imsResetOk = runCatching {
+            telephony.javaClass.getMethod(
+                "resetIms",
+                Int::class.javaPrimitiveType
+            ).invoke(telephony, slot)
+        }.isSuccess
 
         // ColorOS/Qualcomm may also consult IMS debug properties for the UI.
         val propResults = listOf(
@@ -166,6 +170,6 @@ object CarrierConfigBridge {
         runCatching { shellCommand("am", "force-stop", "com.android.phone") }
 
         val propOk = propResults.count { it }
-        return "CarrierConfig OK · subId=$subId · slot=$slot · IMS reset OK · props=$propOk/4"
+        return "CarrierConfig OK · subId=$subId · slot=$slot · IMS reset=" + (if (imsResetOk) "OK" else "SKIP") + " · props=$propOk/4"
     }
 }
