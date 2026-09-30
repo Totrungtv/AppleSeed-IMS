@@ -1,10 +1,89 @@
 import os, sys, time, shutil, subprocess, threading
 from pathlib import Path
-from PySide6.QtCore import Qt, QEvent
-from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QFont, QPainterPath
+from PySide6.QtCore import Qt, QEvent, QTimer
+from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar,QSplashScreen
 
 APP="Apple Seed Android Service Center"
-VER="PySide6-1.0"
+VER="PySide6-1.1"
+
+
+class AppleSeedSplash(QSplashScreen):
+    """Màn hình khởi động nhẹ, không cần thêm ảnh/asset bên ngoài."""
+    def __init__(self):
+        self._progress = 0
+        self._status = "Đang khởi tạo Apple Seed..." 
+        super().__init__(self._render())
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setFixedSize(680, 400)
+
+    def _render(self):
+        pix = QPixmap(680, 400)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+
+        # Nền card tối, bo góc giống giao diện chính.
+        path = QPainterPath()
+        path.addRoundedRect(4, 4, 672, 392, 24, 24)
+        p.fillPath(path, QBrush(QColor("#080d18")))
+        p.setPen(QPen(QColor("#24324a"), 1))
+        p.drawPath(path)
+
+        # Điện thoại Android ở giữa — vẽ bằng Qt, không cần PNG.
+        phone = QPainterPath()
+        phone.addRoundedRect(268, 36, 144, 214, 22, 22)
+        p.fillPath(phone, QBrush(QColor("#101a2b")))
+        p.setPen(QPen(QColor("#38bdf8"), 3))
+        p.drawPath(phone)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(QColor("#050a12")))
+        p.drawRoundedRect(278, 51, 124, 184, 13, 13)
+        p.setBrush(QBrush(QColor("#22c55e")))
+        p.drawRoundedRect(324, 43, 32, 4, 2, 2)
+
+        # Robot Android tối giản.
+        p.setPen(QPen(QColor("#22c55e"), 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.drawLine(304, 99, 292, 86)
+        p.drawLine(376, 99, 388, 86)
+        p.setBrush(QBrush(QColor("#22c55e")))
+        p.drawRoundedRect(304, 91, 72, 54, 17, 17)
+        p.drawRect(304, 124, 72, 47)
+        p.drawRoundedRect(304, 164, 18, 42, 7, 7)
+        p.drawRoundedRect(358, 164, 18, 42, 7, 7)
+        p.setPen(QPen(QColor("#080d18"), 3))
+        p.drawPoint(323, 113); p.drawPoint(357, 113)
+        p.setPen(QPen(QColor("#22c55e"), 3, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(319, 145, 319, 163); p.drawLine(361, 145, 361, 163)
+
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(QColor("#f8fafc")))
+        p.setFont(QFont("Segoe UI", 22, QFont.Bold))
+        p.drawText(0, 278, 680, 32, Qt.AlignCenter, "APPLE SEED")
+        p.setBrush(QBrush(QColor("#38bdf8")))
+        p.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        p.drawText(0, 310, 680, 24, Qt.AlignCenter, "ANDROID SERVICE CENTER")
+
+        # Thanh tiến trình.
+        p.setBrush(QBrush(QColor("#172033")))
+        p.drawRoundedRect(105, 350, 470, 8, 4, 4)
+        width = max(0, min(470, int(470 * self._progress / 100)))
+        if width:
+            p.setBrush(QBrush(QColor("#22c55e")))
+            p.drawRoundedRect(105, 350, width, 8, 4, 4)
+        p.setPen(QColor("#94a3b8"))
+        p.setFont(QFont("Segoe UI", 9))
+        p.drawText(105, 374, 470, 18, Qt.AlignCenter, self._status)
+        p.end()
+        return pix
+
+    def set_progress(self, value, status):
+        self._progress = value
+        self._status = status
+        self.setPixmap(self._render())
+        QApplication.processEvents()
 
 class CallEvent(QEvent):
     TYPE=QEvent.registerEventType()
@@ -821,4 +900,25 @@ class AndroidTool(QMainWindow):
 def shquote(s): return "'"+str(s).replace("'","'\\''")+"'"
 
 if __name__=="__main__":
-    app=QApplication(sys.argv);app.setApplicationName(APP);w=AndroidTool();w.show();sys.exit(app.exec())
+    app=QApplication(sys.argv)
+    app.setApplicationName(APP)
+
+    # Splash Android hiển thị ngay khi mở tool để tránh cảm giác đứng/chậm.
+    splash=AppleSeedSplash()
+    splash.show()
+    app.processEvents()
+    splash.set_progress(18, "Đang khởi tạo giao diện...")
+    w=AndroidTool()
+    splash.set_progress(72, "Đang khởi động ADB...")
+    app.processEvents()
+    splash.set_progress(100, "Apple Seed sẵn sàng.")
+
+    # Giữ splash ngắn rồi chuyển mượt sang cửa sổ chính.
+    def open_main():
+        splash.close()
+        w.show()
+        w.raise_()
+        w.activateWindow()
+
+    QTimer.singleShot(420, open_main)
+    sys.exit(app.exec())
