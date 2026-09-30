@@ -108,12 +108,27 @@ object CarrierConfigBridge {
 
         Log.i(TAG, "CarrierConfig override subId=$subId keys=${persistable.keySet()}")
 
-        loader.javaClass.getMethod(
-            "overrideConfig",
-            Int::class.javaPrimitiveType,
-            android.os.PersistableBundle::class.java,
-            Boolean::class.javaPrimitiveType
-        ).invoke(loader, subId, persistable, true)
+        // Android 10/API 29 exposes overrideConfig(int, PersistableBundle).
+        // Newer Android releases may expose the 3-argument variant with a persistent flag.
+        // Try the newer signature first, then fall back to the Android 10 signature.
+        val overrideApplied = runCatching {
+            loader.javaClass.getMethod(
+                "overrideConfig",
+                Int::class.javaPrimitiveType,
+                android.os.PersistableBundle::class.java,
+                Boolean::class.javaPrimitiveType
+            ).invoke(loader, subId, persistable, true)
+        }.isSuccess || runCatching {
+            loader.javaClass.getMethod(
+                "overrideConfig",
+                Int::class.javaPrimitiveType,
+                android.os.PersistableBundle::class.java
+            ).invoke(loader, subId, persistable)
+        }.isSuccess
+
+        if (!overrideApplied) {
+            throw IllegalStateException("Không tìm thấy overrideConfig tương thích Android này.")
+        }
 
         for (key in listOf(
             "volte_vt_enabled",
