@@ -1,14 +1,10 @@
 package vn.appleseed.volte
 
 import android.content.Context
-import android.os.Bundle
-import android.os.ServiceManager
 import android.provider.Settings
 import android.telephony.CarrierConfigManager
 import android.telephony.SubscriptionManager
 import android.util.Log
-import com.android.internal.telephony.ICarrierConfigLoader
-import com.android.internal.telephony.ITelephony
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
 
@@ -27,22 +23,47 @@ object CarrierConfigBridge {
         }
     }
 
-    private fun carrierConfigLoader(): ICarrierConfigLoader {
-        val binder = runCatching {
-            SystemServiceHelper.getSystemService(Context.CARRIER_CONFIG_SERVICE)
+    /*
+     * Không import com.android.internal.telephony.* hoặc android.os.ServiceManager
+     * trực tiếp vì đó là API nội bộ và sẽ làm Gradle/Kotlin compile fail.
+     * Shizuku vẫn cung cấp binder shell; phần interface nội bộ được resolve
+     * bằng reflection khi chạy trên Android.
+     */
+    private fun getSystemServiceBinder(context: Context, name: String): android.os.IBinder {
+        return runCatching {
+            SystemServiceHelper.getSystemService(name)
         }.getOrElse {
-            ServiceManager.getService(Context.CARRIER_CONFIG_SERVICE)
-        } ?: throw IllegalStateException("Không lấy được carrier_config service.")
-        return ICarrierConfigLoader.Stub.asInterface(ShizukuBinderWrapper(binder))
+            val sm = Class.forName("android.os.ServiceManager")
+            val getService = sm.getMethod("getService", String::class.java)
+            getService.invoke(null, name) as? android.os.IBinder
+                ?: throw IllegalStateException("Không lấy được service: $name")
+        } ?: throw IllegalStateException("Không lấy được service: $name")
     }
 
-    private fun telephony(): ITelephony {
-        val binder = runCatching {
-            SystemServiceHelper.getSystemService(Context.TELEPHONY_SERVICE)
-        }.getOrElse {
-            ServiceManager.getService(Context.TELEPHONY_SERVICE)
-        } ?: throw IllegalStateException("Không lấy được phone service.")
-        return ITelephony.Stub.asInterface(ShizukuBinderWrapper(binder))
+    private fun asInternalInterface(
+        className: String,
+        binder: android.os.IBinder
+    ): Any {
+        val stub = Class.forName("${className}\$Stub")
+        val asInterface = stub.getMethod("asInterface", android.os.IBinder::class.java)
+        return asInterface.invoke(null, ShizukuBinderWrapper(binder))
+            ?: throw IllegalStateException("Không tạo được interface: $className")
+    }
+
+    private fun carrierConfigLoader(): Any {
+        val binder = getSystemServiceBinder(Context(), Context.CARRIER_CONFIG_SERVICE)
+        return asInternalInterface(
+            "com.android.internal.telephony.ICarrierConfigLoader",
+            binder
+        )
+    }
+
+    private fun telephony(): Any {
+        val binder = getSystemServiceBinder(Context(), Context.TELEPHONY_SERVICE)
+        return asInternalInterface(
+            "com.android.internal.telephony.ITelephony",
+            binder
+        )
     }
 
     private fun subId(): Int {
@@ -54,9 +75,8 @@ object CarrierConfigBridge {
     fun applyVoLTE(context: Context): String {
         requireShizuku()
         val subId = subId()
-        val loader = carrierConfigLoader()
 
-        val values = Bundle().apply {
+        val persistable = android.os.PersistableBundle().apply {
             putBoolean(CarrierConfigManager.KEY_CARRIER_VOLTE_AVAILABLE_BOOL, true)
             putBoolean(CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL, true)
             putBoolean(CarrierConfigManager.KEY_CARRIER_VT_AVAILABLE_BOOL, true)
@@ -66,13 +86,20 @@ object CarrierConfigBridge {
             putBoolean(CarrierConfigManager.KEY_ENHANCED_4G_LTE_ON_BY_DEFAULT_BOOL, true)
         }
 
-        val persistable = android.os.PersistableBundle()
-        for (key in values.keySet()) {
-            persistable.putBoolean(key, values.getBoolean(key))
-        }
+        val loader = runCatching { getSystemServiceBinder(context, Context.CARRIER_CONFIG_SERVICE) }
+            .mapCatching {
+                asInternalInterface("com.android.internal.telephony.ICarrierConfigLoader", it)
+            }
+            .getOrThrow()
 
-        Log.i(TAG, "CarrierConfig override subId=" + subId + " keys=" + persistable.keySet())
-        loader.overrideConfig(subId, persistable, true)
+        Log.i(TAG, "CarrierConfig override subId=$subId keys=${persistable.keySet()}")
+
+        loader.javaClass.getMethod(
+            "overrideConfig",
+            Int::class.javaPrimitiveType,
+            android.os.PersistableBundle::class.java,
+            Boolean::class.javaPrimitiveType
+        ).invoke(loader, subId, persistable, true)
 
         for (key in listOf(
             "volte_vt_enabled",
@@ -86,8 +113,18 @@ object CarrierConfigBridge {
         }
 
         val slot = SubscriptionManager.getSlotIndex(subId)
-        telephony().resetIms(slot)
 
-        return "CarrierConfig OK · subId=" + subId + " · slot=" + slot + " · IMS reset OK"
+        val telephony = runCatching { getSystemServiceBinder(context, Context.TELEPHONY_SERVICE) }
+            .mapCatching {
+                asInternalInterface("com.android.internal.telephony.ITelephony", it)
+            }
+            .getOrThrow()
+
+        telephony.javaClass.getMethod(
+            "resetIms",
+            Int::class.javaPrimitiveType
+        ).invoke(telephony, slot)
+
+        return "CarrierConfig OK · subId=$subId · slot=$slot · IMS reset OK"
     }
 }
