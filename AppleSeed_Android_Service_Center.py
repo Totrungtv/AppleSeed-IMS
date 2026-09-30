@@ -634,6 +634,21 @@ class AndroidTool(QMainWindow):
             self.showout(self.volte_out,"IMS CHUYÊN SÂU","\n\n".join(out))
         self.threaded(w)
 
+    def start_shizuku_via_adb(self):
+        """Start Shizuku with its official ADB startup script."""
+        commands=[
+            "sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh",
+            "sh /storage/emulated/0/Android/data/moe.shizuku.privileged.api/start.sh",
+        ]
+        last=""
+        for cmd in commands:
+            rc,out=self.run(["-s",self.serial,"shell","sh","-c",cmd],20)
+            last=out.strip()
+            if rc==0:
+                time.sleep(1.5)
+                return True,last
+        return False,last
+
     def native_volte(self):
         """VoLTE 1-click bằng ADB + Apple Seed VoLTE app.
 
@@ -744,22 +759,38 @@ class AndroidTool(QMainWindow):
                     except Exception as e:
                         out.append(f"\\n{cmd}\\nERROR: {e}")
 
-                self._volte_progress(55,"Kiểm tra Shizuku backend")
+                self._volte_progress(55,"Khởi động Shizuku tự động")
                 try:
                     shizuku_pkg="package:moe.shizuku.privileged.api" in self.shell(
                         "pm list packages moe.shizuku.privileged.api",8
                     )
                 except Exception:
                     shizuku_pkg=False
+
+                shizuku_started=False
+                shizuku_msg=""
+                if shizuku_pkg:
+                    try:
+                        shizuku_started,shizuku_msg=self.start_shizuku_via_adb()
+                    except Exception as e:
+                        shizuku_msg=str(e)
+
                 out.append(
-                    "\\n--- SHIZUKU ---\\n"
-                    + ("✓ Đã thấy gói Shizuku. Mở FIX_VOLTE để app kiểm tra quyền."
-                       if shizuku_pkg
-                       else "⚠ Chưa thấy Shizuku. CarrierConfig nâng cao sẽ không chạy trong app.")
+                    "\n--- SHIZUKU ---\n"
+                    + (
+                        "✓ Đã cài Shizuku và đã gửi lệnh START qua ADB."
+                        if shizuku_started
+                        else (
+                            "✓ Đã thấy gói Shizuku nhưng chưa xác nhận server đang chạy."
+                            + ("\n"+shizuku_msg if shizuku_msg else "")
+                            if shizuku_pkg
+                            else "⚠ Chưa thấy Shizuku."
+                        )
+                    )
                 )
 
                 if installed:
-                    self._volte_progress(65,"Mở Apple Seed FIX_VOLTE")
+                    self._volte_progress(68,"Mở Apple Seed FIX_VOLTE")
                     rc,o=self.run([
                         "-s",self.serial,"shell","am","start",
                         "-a","vn.appleseed.volte.action.FIX_VOLTE",
@@ -824,9 +855,9 @@ class AndroidTool(QMainWindow):
                 if installed:
                     if shizuku_pkg:
                         conclusion=(
-                            "ADB flags đã ghi. Apple Seed FIX_VOLTE đã được mở; "
-                            "CarrierConfig nâng cao chỉ thành công nếu Shizuku đang chạy "
-                            "và Apple Seed đã được cấp quyền Shizuku."
+                            "ADB flags đã ghi và đã thử START Shizuku bằng ADB. "
+                            "Nếu đây là lần đầu, hãy bấm Cho phép quyền Shizuku cho Apple Seed; "
+                            "sau đó FIX_VOLTE sẽ chạy CarrierConfig/IMS."
                         )
                     else:
                         conclusion=(
