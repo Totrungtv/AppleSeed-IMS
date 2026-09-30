@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.net.Uri
 import java.io.InputStream
 import rikka.shizuku.Shizuku
 import org.lsposed.hiddenapibypass.HiddenApiBypass
@@ -23,6 +24,7 @@ private const val KEY_VOLTE = "volte_enabled"
 private const val KEY_CARRIER_VT = "carrier_vt_enabled"
 private const val SHIZUKU_REQUEST_CODE = 4107
 private const val ACTION_FIX_VOLTE = "vn.appleseed.volte.action.FIX_VOLTE"
+private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
 class MainActivity : ComponentActivity() {
     private var shizukuGrantedState by mutableStateOf(false)
@@ -55,6 +57,26 @@ class MainActivity : ComponentActivity() {
         }
         if (!shizukuGrantedState) {
             Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
+        }
+    }
+
+    
+    private fun openShizuku() {
+        val launch = packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE)
+        if (launch != null) {
+            startActivity(launch)
+            return
+        }
+
+        runCatching {
+            startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + SHIZUKU_PACKAGE)
+                )
+            )
+        }.getOrElse {
+            throw IllegalStateException("Chưa cài Shizuku trên máy.")
         }
     }
 
@@ -186,6 +208,11 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshShizukuState()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -227,14 +254,28 @@ class MainActivity : ComponentActivity() {
                     Button(
                         onClick = {
                             runCatching {
-                                status = CarrierConfigBridge.applyVoLTE(this@MainActivity)
-                                enabled = true
+                                if (hasSecureSettingsPermission()) {
+                                    setVolte(true)
+                                    enabled = true
+                                    secureGranted = true
+                                }
+
+                                refreshShizukuState()
+                                if (shizukuGrantedState) {
+                                    status = CarrierConfigBridge.applyVoLTE(this@MainActivity)
+                                    enabled = allEnabled()
+                                } else {
+                                    status =
+                                        "✓ Đã bật cờ VoLTE bằng WRITE_SECURE_SETTINGS. " +
+                                        "Mở Shizuku + cấp quyền Apple Seed để chạy CarrierConfig/IMS."
+                                }
                             }.onFailure { e ->
                                 refreshShizukuState()
-                                status = "✕ CarrierConfig: " + (e.message ?: e.javaClass.simpleName)
+                                secureGranted = hasSecureSettingsPermission()
+                                status = "✕ FIX VoLTE: " + (e.message ?: e.javaClass.simpleName)
                             }
                         },
-                        enabled = shizukuGrantedState,
+                        enabled = secureGranted || shizukuGrantedState,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("⚡ FIX VOLTE + CARRIERCONFIG + IMS") }
 
@@ -254,14 +295,30 @@ class MainActivity : ComponentActivity() {
                             Button(
                                 onClick = {
                                     runCatching {
-                                        requestShizukuPermission()
-                                        status = "Đã gửi yêu cầu quyền Shizuku. Hãy bấm Cho phép nếu hộp thoại xuất hiện."
+                                        refreshShizukuState()
+                                        if (!shizukuRunningState) {
+                                            openShizuku()
+                                            status = "Đã mở Shizuku. Hãy Start Shizuku bằng ADB/Wireless ADB rồi quay lại Apple Seed."
+                                        } else if (!shizukuGrantedState) {
+                                            requestShizukuPermission()
+                                            status = "Đã gửi yêu cầu quyền Shizuku. Hãy bấm Cho phép nếu hộp thoại xuất hiện."
+                                        } else {
+                                            status = "✓ Shizuku đang chạy và Apple Seed đã được cấp quyền."
+                                        }
                                     }.onFailure {
-                                        status = it.message ?: "Không thể yêu cầu Shizuku."
+                                        status = it.message ?: "Không thể mở/kiểm tra Shizuku."
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
-                            ) { Text(if (shizukuRunningState) "🔐 CẤP QUYỀN SHIZUKU" else "▶ KIỂM TRA SHIZUKU") }
+                            ) {
+                                Text(
+                                    when {
+                                        shizukuGrantedState -> "✓ SHIZUKU ĐÃ CẤP QUYỀN"
+                                        shizukuRunningState -> "🔐 CẤP QUYỀN SHIZUKU"
+                                        else -> "▶ MỞ SHIZUKU / KIỂM TRA"
+                                    }
+                                )
+                            }
                         }
                     }
 
