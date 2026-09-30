@@ -130,43 +130,60 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openVolteSettings() {
-        // OPPO/ColorOS có màn hình mạng riêng. Trên một số ColorOS,
-        // ACTION_OPPO_WIRELESS_SETTINGS sẽ resolve tới
-        // com.coloros.wirelesssettings/.OppoWirelessSettingsActivity.
-        val candidates = listOf(
-            Intent("android.settings.OPPO_WIRELESS_SETTINGS"),
-            Intent().setComponent(
-                ComponentName(
-                    "com.coloros.wirelesssettings",
-                    "com.coloros.wirelesssettings.OppoWirelessSettingsActivity"
-                )
-            ),
-            Intent().setComponent(
-                ComponentName(
-                    "com.oplus.wirelesssettings",
-                    "com.oplus.wirelesssettings.OppoWirelessSettingsActivity"
-                )
-            ),
-            Intent(Settings.ACTION_MOBILE_NETWORK_SETTINGS),
-            Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS),
-            Intent(Settings.ACTION_WIRELESS_SETTINGS),
-            Intent(Settings.ACTION_SETTINGS)
+        // Không hard-code Activity của com.android.phone/ColorOS.
+        // ColorOS thay đổi package/activity giữa từng phiên bản.
+        // Query các Intent mà ROM thực sự export rồi mở Activity đầu tiên hợp lệ.
+        val actions = listOf(
+            "android.settings.MOBILE_NETWORK_SETTINGS",
+            "android.settings.NETWORK_OPERATOR_SETTINGS",
+            "android.settings.WIRELESS_SETTINGS",
+            "android.settings.SETTINGS"
         )
 
         var lastError: Throwable? = null
-        for (intent in candidates) {
+
+        for (action in actions) {
             try {
-                if (intent.resolveActivity(packageManager) != null) {
-                    startActivity(intent)
-                    return
-                }
+                val intent = Intent(action)
+                val matches = packageManager.queryIntentActivities(
+                    intent,
+                    android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+                )
+
+                if (matches.isEmpty()) continue
+
+                // Ưu tiên Settings/ColorOS Wireless Settings nếu ROM trả về nhiều activity.
+                val preferred = matches.firstOrNull { ri ->
+                    val pkg = ri.activityInfo.packageName.lowercase()
+                    pkg.contains("wirelesssettings") ||
+                        pkg.contains("settings")
+                } ?: matches.first()
+
+                val component = ComponentName(
+                    preferred.activityInfo.packageName,
+                    preferred.activityInfo.name
+                )
+
+                startActivity(Intent(action).apply {
+                    setComponent(component)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                return
             } catch (e: Throwable) {
                 lastError = e
             }
         }
 
+        // Fallback cuối: mở trang Settings chung, không dùng explicit component.
+        try {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
+            return
+        } catch (e: Throwable) {
+            lastError = e
+        }
+
         throw IllegalStateException(
-            "Không tìm thấy màn hình Cài đặt mạng/VoLTE trên ROM này" +
+            "ROM không có Activity Settings có thể mở" +
                 (lastError?.message?.let { ": $it" } ?: "")
         )
     }
