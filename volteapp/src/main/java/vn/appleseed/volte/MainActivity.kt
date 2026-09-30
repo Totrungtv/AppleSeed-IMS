@@ -360,6 +360,75 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    var guideExpanded by remember { mutableStateOf(false) }
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("📘 HƯỚNG DẪN FIX VoLTE + VoWiFi", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (guideExpanded) "Quy trình chuẩn cho OPPO/ColorOS Android 10"
+                                else "Bấm để xem quy trình 1-click và cách xử lý khi Shizuku chưa chạy."
+                            )
+
+                            if (guideExpanded) {
+                                Text("① KẾT NỐI ADB", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Cắm USB, bật Gỡ lỗi USB và kiểm tra trên máy tính: " +
+                                    "adb devices → phải hiện thiết bị ở trạng thái device."
+                                )
+
+                                Text("② START SHIZUKU", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Mở Shizuku → Start via ADB. Với Android 10, chạy đúng lệnh " +
+                                    "Shizuku hiển thị. Không tự đoán đường dẫn start.sh."
+                                )
+
+                                Text("③ CẤP QUYỀN", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Quay lại Apple Seed → mục SHIZUKU BACKEND phải báo " +
+                                    "Shizuku đang chạy và Apple Seed đã được cấp quyền. " +
+                                    "Nếu OPPO chặn ADB, tắt Permission monitoring trong Tùy chọn nhà phát triển."
+                                )
+
+                                Text("④ FIX 1-CLICK", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Bấm ⚡ FIX VOLTE + CARRIERCONFIG + IMS. Apple Seed sẽ bật " +
+                                    "cờ VoLTE, áp CarrierConfig, thử IMS reset và áp các IMS override " +
+                                    "bằng backend Shizuku khi ROM cho phép."
+                                )
+
+                                Text("⑤ MỞ CÀI ĐẶT", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Bấm 📶 MỞ CÀI ĐẶT VoLTE rồi kiểm tra SIM. Có thể xuất hiện " +
+                                    "VoLTE/Enhanced 4G LTE và Wi-Fi Calling/VoWiFi tùy ROM, SIM và nhà mạng."
+                                )
+
+                                Text("⑥ TEST THỰC TẾ", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Gọi thử khi máy đang LTE, sau đó bật Wi-Fi và kiểm tra Wi-Fi Calling. " +
+                                    "Cuối cùng khởi động lại máy để kiểm tra trạng thái sau reboot."
+                                )
+
+                                Text("⚠ LƯU Ý", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Cờ VoLTE chỉ là một phần. VoLTE/VoWiFi thực tế còn phụ thuộc modem, " +
+                                    "IMS, SIM, nhà mạng và provisioning. Shizuku không phải là VoLTE và " +
+                                    "trên Android 10 backend ADB của Shizuku cần khởi động lại sau reboot."
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = { guideExpanded = !guideExpanded },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (guideExpanded) "▲ THU GỌN HƯỚNG DẪN" else "▼ XEM BẢNG HƯỚNG DẪN")
+                            }
+                        }
+                    }
+
                     Text(status)
                     Text("TRẠNG THÁI:", style = MaterialTheme.typography.titleMedium)
                     Text("WRITE_SECURE_SETTINGS = " + if (secureGranted) "GRANTED" else "DENIED")
