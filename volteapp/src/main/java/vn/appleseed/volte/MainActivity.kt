@@ -130,24 +130,33 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openVolteSettings() {
-        val candidates = listOf(
-            Intent().setComponent(
-                ComponentName("com.android.phone", "com.android.phone.settings.MobileNetworkSettings")
-            ),
-            Intent().setComponent(
-                ComponentName("com.android.phone", "com.android.phone.settings.Settings\$MobileNetworkSettingsActivity")
-            ),
-            Intent("android.settings.NETWORK_OPERATOR_SETTINGS"),
-            Intent(Settings.ACTION_WIRELESS_SETTINGS)
+        // ColorOS/OPPO thay đổi component của màn hình mạng theo phiên bản.
+        // Không hard-code một Activity rồi để Android ném
+        // "Unable to find explicit activity class".
+        val intents = listOf(
+            Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS),
+            Intent(Settings.ACTION_MOBILE_NETWORK_SETTINGS),
+            Intent(Settings.ACTION_WIRELESS_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS)
         )
 
-        for (intent in candidates) {
-            if (intent.resolveActivity(packageManager) != null) {
-                startActivity(intent)
-                return
+        var lastError: Throwable? = null
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (intent.resolveActivity(packageManager) != null) {
+                    startActivity(intent)
+                    return
+                }
+            } catch (e: Throwable) {
+                lastError = e
             }
         }
-        throw IllegalStateException("ROM không cung cấp màn hình Mobile Network/VoLTE")
+
+        throw IllegalStateException(
+            "ROM không cung cấp màn hình Cài đặt mạng/VoLTE" +
+                (lastError?.message?.let { ": $it" } ?: "")
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
