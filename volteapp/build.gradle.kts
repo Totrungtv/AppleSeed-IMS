@@ -7,10 +7,10 @@ android {
     compileSdk { version = release(37) }
     defaultConfig {
         applicationId = "vn.appleseed.volte"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.1.9"
+        versionCode = 12
+        versionName = "1.2.0"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
