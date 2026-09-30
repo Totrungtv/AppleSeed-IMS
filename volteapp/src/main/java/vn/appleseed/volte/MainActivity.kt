@@ -130,32 +130,60 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openVolteSettings() {
-        // ColorOS/OPPO thay đổi component của màn hình mạng theo phiên bản.
-        // Không hard-code một Activity rồi để Android ném
-        // "Unable to find explicit activity class".
-        val intents = listOf(
-            Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS),
-            Intent(Settings.ACTION_MOBILE_NETWORK_SETTINGS),
+        // ColorOS/OPPO 10 dùng nhiều component khác nhau tùy bản ROM.
+        // Thử cả action chuẩn Android và các Activity của com.android.settings.
+        val candidates = listOf(
+            Intent("android.settings.MOBILE_NETWORK_SETTINGS"),
+            Intent("android.settings.NETWORK_SETTINGS"),
+            Intent("android.settings.NETWORK_OPERATOR_SETTINGS"),
+            Intent("android.settings.DATA_ROAMING_SETTINGS"),
+            Intent("android.settings.APN_SETTINGS"),
             Intent(Settings.ACTION_WIRELESS_SETTINGS),
-            Intent(Settings.ACTION_SETTINGS)
+            Intent(Settings.ACTION_SETTINGS),
+            Intent(Intent.ACTION_MAIN).setComponent(
+                ComponentName(
+                    "com.android.settings",
+                    "com.android.settings.Settings\$WirelessSettingsActivity"
+                )
+            ),
+            Intent(Intent.ACTION_MAIN).setComponent(
+                ComponentName(
+                    "com.android.settings",
+                    "com.android.settings.Settings\$NetworkDashboardActivity"
+                )
+            ),
+            Intent(Intent.ACTION_MAIN).setComponent(
+                ComponentName(
+                    "com.android.settings",
+                    "com.android.settings.Settings\$MobileNetworkListActivity"
+                )
+            ),
+            Intent(Intent.ACTION_MAIN).setComponent(
+                ComponentName(
+                    "com.android.settings",
+                    "com.android.settings.Settings"
+                )
+            )
         )
 
-        var lastError: Throwable? = null
-        for (intent in intents) {
+        val errors = mutableListOf<String>()
+        for ((index, intent) in candidates.withIndex()) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                if (intent.resolveActivity(packageManager) != null) {
+                val resolved = packageManager.resolveActivity(intent, 0)
+                if (resolved != null) {
                     startActivity(intent)
                     return
                 }
+                errors += "#$index: không có Activity cho " + intent.action
             } catch (e: Throwable) {
-                lastError = e
+                errors += "#$index: " + (e.message ?: e.javaClass.simpleName)
             }
         }
 
         throw IllegalStateException(
-            "ROM không cung cấp màn hình Cài đặt mạng/VoLTE" +
-                (lastError?.message?.let { ": $it" } ?: "")
+            "Không mở được Cài đặt mạng/VoLTE trên ROM này. " +
+                errors.takeLast(4).joinToString(" | ")
         )
     }
 
