@@ -50,22 +50,6 @@ object CarrierConfigBridge {
             ?: throw IllegalStateException("Không tạo được interface: $className")
     }
 
-    private fun carrierConfigLoader(): Any {
-        val binder = getSystemServiceBinder(Context(), Context.CARRIER_CONFIG_SERVICE)
-        return asInternalInterface(
-            "com.android.internal.telephony.ICarrierConfigLoader",
-            binder
-        )
-    }
-
-    private fun telephony(): Any {
-        val binder = getSystemServiceBinder(Context(), Context.TELEPHONY_SERVICE)
-        return asInternalInterface(
-            "com.android.internal.telephony.ITelephony",
-            binder
-        )
-    }
-
     private fun subId(): Int {
         val id = SubscriptionManager.getDefaultSubscriptionId()
         if (SubscriptionManager.isValidSubscriptionId(id)) return id
