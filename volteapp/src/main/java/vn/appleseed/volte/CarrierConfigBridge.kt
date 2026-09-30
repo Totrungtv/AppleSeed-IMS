@@ -50,6 +50,30 @@ object CarrierConfigBridge {
             ?: throw IllegalStateException("Không tạo được interface: $className")
     }
 
+    private fun shellCommand(vararg args: String): String {
+        val method = rikka.shizuku.Shizuku::class.java.getDeclaredMethod(
+            "newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java
+        )
+        method.isAccessible = true
+        val remote = method.invoke(null, args, null, null)
+            ?: throw IllegalStateException("Shizuku không tạo được process.")
+        return try {
+            val input = remote.javaClass.getMethod("getInputStream").invoke(remote) as java.io.InputStream
+            val error = remote.javaClass.getMethod("getErrorStream").invoke(remote) as java.io.InputStream
+            remote.javaClass.getMethod("waitFor").invoke(remote)
+            val out = input.bufferedReader().use { it.readText() }.trim()
+            val err = error.bufferedReader().use { it.readText() }.trim()
+            if (err.isNotEmpty()) "ERROR: $err" else out
+        } finally {
+            runCatching { remote.javaClass.getMethod("destroy").invoke(remote) }
+        }
+    }
+
+    private fun shellSetProp(key: String, value: String) {
+        val result = shellCommand("setprop", key, value)
+        if (result.startsWith("ERROR:", ignoreCase = true)) throw IllegalStateException(result)
+    }
+
     private fun subId(): Int {
         val id = SubscriptionManager.getDefaultSubscriptionId()
         if (SubscriptionManager.isValidSubscriptionId(id)) return id
@@ -60,14 +84,20 @@ object CarrierConfigBridge {
         requireShizuku()
         val subId = subId()
 
+        // Force the carrier configuration values that control the VoLTE UI.
         val persistable = android.os.PersistableBundle().apply {
-            putBoolean(CarrierConfigManager.KEY_CARRIER_VOLTE_AVAILABLE_BOOL, true)
-            putBoolean(CarrierConfigManager.KEY_CARRIER_VOLTE_PROVISIONED_BOOL, true)
-            putBoolean(CarrierConfigManager.KEY_CARRIER_VT_AVAILABLE_BOOL, true)
-            putBoolean(CarrierConfigManager.KEY_CARRIER_WFC_IMS_AVAILABLE_BOOL, true)
-            putBoolean(CarrierConfigManager.KEY_HIDE_ENHANCED_4G_LTE_BOOL, false)
-            putBoolean(CarrierConfigManager.KEY_EDITABLE_ENHANCED_4G_LTE_BOOL, true)
-            putBoolean(CarrierConfigManager.KEY_ENHANCED_4G_LTE_ON_BY_DEFAULT_BOOL, true)
+            putBoolean("carrier_volte_available_bool", true)
+            putBoolean("carrier_volte_provisioned_bool", true)
+            putBoolean("carrier_volte_provisioning_required_bool", false)
+            putBoolean("carrier_volte_tty_supported_bool", true)
+            putBoolean("carrier_vt_available_bool", true)
+            putBoolean("carrier_wfc_ims_available_bool", true)
+            putBoolean("carrier_allow_turnoff_ims_bool", true)
+            putBoolean("carrier_ims_gba_required_bool", false)
+            putBoolean("hide_enhanced_4g_lte_bool", false)
+            putBoolean("editable_enhanced_4g_lte_bool", true)
+            putBoolean("enhanced_4g_lte_on_by_default_bool", true)
+            putBoolean("hide_ims_apn_bool", false)
         }
 
         val loader = runCatching { getSystemServiceBinder(context, Context.CARRIER_CONFIG_SERVICE) }
@@ -109,6 +139,18 @@ object CarrierConfigBridge {
             Int::class.javaPrimitiveType
         ).invoke(telephony, slot)
 
-        return "CarrierConfig OK · subId=$subId · slot=$slot · IMS reset OK"
+        // ColorOS/Qualcomm may also consult IMS debug properties for the UI.
+        val propResults = listOf(
+            "persist.dbg.ims_volte_enable" to "1",
+            "persist.dbg.volte_avail_ovr" to "1",
+            "persist.dbg.vt_avail_ovr" to "1",
+            "persist.dbg.wfc_avail_ovr" to "1"
+        ).map { (key, value) -> runCatching { shellSetProp(key, value) }.isSuccess }
+
+        // Reload the Phone process so Settings sees the new carrier/IMS state.
+        runCatching { shellCommand("am", "force-stop", "com.android.phone") }
+
+        val propOk = propResults.count { it }
+        return "CarrierConfig OK · subId=$subId · slot=$slot · IMS reset OK · props=$propOk/4"
     }
 }
