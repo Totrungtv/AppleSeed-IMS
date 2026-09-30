@@ -175,7 +175,7 @@ class AndroidTool(QMainWindow):
 
     def volte_tab(self):
         w=QWidget(); l=QVBoxLayout(w); t=QLabel("VoLTE / IMS • APPLE SEED"); t.setStyleSheet("font-size:21pt;font-weight:800"); l.addWidget(t)
-        n=QLabel("Native CarrierConfig → fallback flags → kiểm tra lại IMS. Không thay đổi IMEI/SIM lock/modem."); n.setObjectName("muted"); l.addWidget(n)
+        n=QLabel("ADB VoLTE flags → Apple Seed FIX_VOLTE → Shizuku/CarrierConfig nếu đã được cấp quyền → kiểm tra IMS. Không thay đổi IMEI/SIM lock/modem."); n.setObjectName("muted"); l.addWidget(n)
         g=QGridLayout()
         for txt,fn,k in [("⚡ KÍCH HOẠT VoLTE TỰ ĐỘNG 1-CLICK",self.native_volte,"red"),("🔎 KIỂM TRA VoLTE",self.volte_check,""),
                          ("🧪 IMS CHUYÊN SÂU",self.ims_check,""),("📱 CÀI APP VoLTE",self.install_volte_app,"green"),
@@ -377,129 +377,215 @@ class AndroidTool(QMainWindow):
         self.threaded(w)
 
     def native_volte(self):
-        if not self.require():return
-        dex=self.base/"assets"/"hbg_volte_fixer.dex"
-        if not dex.exists():QMessageBox.critical(self,"VoLTE","Thiếu assets/hbg_volte_fixer.dex");return
-        if not self.ask("VoLTE 1-CLICK","Chạy native CarrierConfig + fallback flags + kiểm tra IMS?"):return
+        """VoLTE 1-click bằng ADB + Apple Seed VoLTE app.
+
+        Không đẩy/chạy DEX native CarrierConfig từ /data/local/tmp.
+        CarrierConfig nâng cao chỉ được thực hiện bên trong Apple Seed VoLTE
+        khi người dùng đã cài/chạy Shizuku và cấp quyền cho app.
+        """
+        if not self.require():
+            return
+        if not self.ask(
+            "VoLTE 1-CLICK",
+            "Chạy quy trình Apple Seed VoLTE?\\n\\n"
+            "1) Kiểm tra/cài Apple Seed VoLTE\\n"
+            "2) Bật các cờ VoLTE bằng ADB shell\\n"
+            "3) Mở FIX_VOLTE để app dùng Shizuku nếu đã được cấp quyền\\n"
+            "4) Đọc lại trạng thái IMS/CarrierConfig"
+        ):
+            return
+
         def w():
-            out=["===== APPLE SEED NATIVE VoLTE 1-CLICK ====="]
-            remote="/data/local/tmp/hbg_volte_fixer.dex"
+            out=["===== APPLE SEED VoLTE 1-CLICK ====="]
             apk=self.base/"apps"/"AppleSeed_VoLTE.apk"
             try:
-                folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}";folder.mkdir(parents=True,exist_ok=True)
-                # 1-CLICK: cài APK -> áp dụng cấu hình bằng ADB shell -> mở app.
-                # WRITE_SECURE_SETTINGS là signature-only đối với app bên thứ ba, nên không ép pm grant.
-                # ADB shell là lớp thực thi quyền; APK chỉ đọc/hiển thị trạng thái sau khi tool áp dụng.
-                self._volte_progress(5,"Kiểm tra Apple Seed VoLTE APK")
+                folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}"
+                folder.mkdir(parents=True,exist_ok=True)
+
+                self._volte_progress(5,"Kiểm tra Apple Seed VoLTE")
                 installed=False
                 try:
-                    installed="package:vn.appleseed.volte" in self.shell("pm list packages vn.appleseed.volte",8)
-                except Exception:
-                    installed=False
+                    installed="package:vn.appleseed.volte" in self.shell(
+                        "pm list packages vn.appleseed.volte",8
+                    )
+                except Exception as e:
+                    out.append("CHECK APK ERROR: "+str(e))
 
-                if apk.exists() and not installed:
-                    # ColorOS chặn adb install trên một số máy: chép APK vào máy
-                    # rồi mở trình cài hệ thống. Chỉ cần người dùng bấm CÀI ĐẶT 1 lần.
-                    apk_dir="/sdcard/AppleSeed/APK"
-                    apk_remote=apk_dir+"/AppleSeed_VoLTE.apk"
-                    self._volte_progress(8,"Chép APK vào Apple Seed/APK")
-                    rc_mk,o_mk=self.run(["-s",self.serial,"shell","mkdir","-p",apk_dir],15)
-                    out.append(f"\n--- MKDIR APK rc={rc_mk} ---\n{o_mk}")
-                    rc_push,o_push=self.run(["-s",self.serial,"push",str(apk),apk_remote],60)
-                    out.append(f"\n--- PUSH APK rc={rc_push} ---\n{o_push}")
-                    if rc_push!=0:
-                        raise RuntimeError("Không chép được APK: "+(o_push or "ADB push thất bại"))
-
-                    self._volte_progress(12,"Mở trình cài APK — bấm CÀI ĐẶT")
-                    view_cmd=["-s",self.serial,"shell","am","start","-a","android.intent.action.VIEW","-d","file://"+apk_remote,"-t","application/vnd.android.package-archive"]
-                    rc_view,o_view=self.run(view_cmd,20)
-                    out.append(f"\n--- OPEN APK INSTALLER rc={rc_view} ---\n{o_view}")
-                    if rc_view!=0:
-                        rc_view2,o_view2=self.run(["-s",self.serial,"shell","am","start","-a","android.intent.action.VIEW","-d","file:///sdcard/AppleSeed/APK/"],20)
-                        out.append(f"\n--- OPEN APK FOLDER rc={rc_view2} ---\n{o_view2}")
-                    out.append("\n>>> Bấm CÀI ĐẶT trên điện thoại. Tool tự chờ tối đa 120 giây. <<<")
-
-                    for _ in range(60):
-                        time.sleep(2)
-                        try:
-                            installed="package:vn.appleseed.volte" in self.shell("pm list packages vn.appleseed.volte",8)
-                        except Exception:
-                            installed=False
-                        if installed:
-                            break
-                    if not installed:
-                        raise RuntimeError("APK chưa được cài. Bấm CÀI ĐẶT trên điện thoại rồi chạy lại 1-CLICK.")
-                elif installed:
-                    out.append("\n--- APK ĐÃ CÓ SẴN, BỎ QUA CÀI ĐẶT ---")
-                elif not apk.exists():
-                    out.append("\n--- KHÔNG CÓ APK LOCAL, TIẾP TỤC NATIVE ---")
+                if not installed and apk.exists():
+                    self._volte_progress(12,"Cài Apple Seed VoLTE bằng ADB")
+                    rc,install_out=self.run([
+                        "-s",self.serial,"install","-r","-d","-g",
+                        "--no-incremental",str(apk)
+                    ],90)
+                    out.append(f"\\n--- ADB INSTALL rc={rc} ---\\n{install_out}")
+                    if rc==0:
+                        installed=True
+                    else:
+                        # ColorOS có thể chặn cài trực tiếp. Chép APK và mở
+                        # Package Installer; không tự tắt bảo vệ hệ thống.
+                        remote="/sdcard/AppleSeed/APK/AppleSeed_VoLTE.apk"
+                        self._volte_progress(20,"ROM chặn ADB install — mở trình cài hệ thống")
+                        self.run([
+                            "-s",self.serial,"shell","mkdir","-p",
+                            "/sdcard/AppleSeed/APK"
+                        ],15)
+                        rc_push,push_out=self.run([
+                            "-s",self.serial,"push",str(apk),remote
+                        ],90)
+                        out.append(f"\\n--- PUSH APK rc={rc_push} ---\\n{push_out}")
+                        if rc_push==0:
+                            rc_view,view_out=self.run([
+                                "-s",self.serial,"shell","am","start",
+                                "-a","android.intent.action.VIEW",
+                                "-d","file://"+remote,
+                                "-t","application/vnd.android.package-archive",
+                                "-f","0x10000000"
+                            ],20)
+                            out.append(
+                                f"\\n--- PACKAGE INSTALLER rc={rc_view} ---\\n{view_out}"
+                            )
+                            out.append(
+                                "\\n>>> Hãy bấm CÀI ĐẶT trên điện thoại. "
+                                "Tool chờ tối đa 90 giây. <<<"
+                            )
+                            for _ in range(45):
+                                time.sleep(2)
+                                try:
+                                    installed="package:vn.appleseed.volte" in self.shell(
+                                        "pm list packages vn.appleseed.volte",8
+                                    )
+                                except Exception:
+                                    installed=False
+                                if installed:
+                                    break
 
                 if installed:
-                    out.append("\n--- APK ĐÃ CÀI THÀNH CÔNG ---")
-                try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8")
-                except Exception as e: out.append("BACKUP: bỏ qua - "+str(e))
-                self._volte_progress(18,"Đưa Native VoLTE runner vào máy")
-                rc,o=self.run(["-s",self.serial,"push",str(dex),remote],30);out.append(f"PUSH DEX rc={rc}\n{o}")
-                if rc==0:
-                    for proc in ("app_process64","app_process"):
-                        self._volte_progress(30,"Chạy Native CarrierConfig ("+proc+")")
-                        rc,o=self.run(["-s",self.serial,"shell",proc,"-Djava.class.path="+remote,"/system/bin","com.hbg.volte.VolteFixer","ENABLE"],25)
-                        out.append(f"{proc} rc={rc}\n{o}")
-                        if rc==0:break
-                self._volte_progress(52,"Cấp WRITE_SECURE_SETTINGS cho Apple Seed VoLTE")
+                    out.append("\\n✓ Apple Seed VoLTE đã được cài.")
+                else:
+                    out.append("\\n⚠ Chưa có Apple Seed VoLTE; tiếp tục phần ADB flags.")
+
                 try:
-                    rc_g,o_g=self.run(["-s",self.serial,"shell","pm","grant","vn.appleseed.volte","android.permission.WRITE_SECURE_SETTINGS"],12)
-                    out.append(f"\n--- GRANT WRITE_SECURE_SETTINGS rc={rc_g} ---\n{o_g}")
-                    if rc_g!=0:
-                        out.append("⚠ ROM từ chối cấp quyền SYSTEM; tiếp tục kiểm tra cờ và mở Cài đặt VoLTE.")
+                    (folder/"getprop.txt").write_text(
+                        self.shell("getprop",20),encoding="utf-8"
+                    )
                 except Exception as e:
-                    out.append("\n--- GRANT WRITE_SECURE_SETTINGS ---\nERROR: "+str(e))
-                self._volte_progress(55,"Áp dụng VoLTE flags bằng ADB shell")
-                for cmd in ["settings put global volte_vt_enabled 1","settings put global enhanced_4g_mode_enabled 1","settings put global volte_enabled 1","settings put global carrier_vt_enabled 1"]:
+                    out.append("BACKUP: "+str(e))
+
+                self._volte_progress(35,"Bật cờ VoLTE bằng ADB shell")
+                for cmd in [
+                    "settings put global volte_vt_enabled 1",
+                    "settings put global enhanced_4g_mode_enabled 1",
+                    "settings put global volte_enabled 1",
+                    "settings put global carrier_vt_enabled 1",
+                ]:
                     try:
-                        rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],8)
-                        out.append(f"\n{cmd}\nrc={rc}\n{o}")
-                    except Exception as e: out.append(f"\n{cmd}\nTIMEOUT/ERROR: {e}")
-                self._volte_progress(68,"Đọc lại 4 cờ VoLTE")
-                for key in ["volte_vt_enabled","enhanced_4g_mode_enabled","volte_enabled","carrier_vt_enabled"]:
+                        rc,o=self.run(
+                            ["-s",self.serial,"shell","sh","-c",cmd],8
+                        )
+                        out.append(f"\\n{cmd}\\nrc={rc}\\n{o}")
+                    except Exception as e:
+                        out.append(f"\\n{cmd}\\nERROR: {e}")
+
+                self._volte_progress(55,"Kiểm tra Shizuku backend")
+                try:
+                    shizuku_pkg="package:moe.shizuku.privileged.api" in self.shell(
+                        "pm list packages moe.shizuku.privileged.api",8
+                    )
+                except Exception:
+                    shizuku_pkg=False
+                out.append(
+                    "\\n--- SHIZUKU ---\\n"
+                    + ("✓ Đã thấy gói Shizuku. Mở FIX_VOLTE để app kiểm tra quyền."
+                       if shizuku_pkg
+                       else "⚠ Chưa thấy Shizuku. CarrierConfig nâng cao sẽ không chạy trong app.")
+                )
+
+                if installed:
+                    self._volte_progress(65,"Mở Apple Seed FIX_VOLTE")
+                    rc,o=self.run([
+                        "-s",self.serial,"shell","am","start",
+                        "-a","vn.appleseed.volte.action.FIX_VOLTE",
+                        "-n","vn.appleseed.volte/.MainActivity"
+                    ],15)
+                    out.append(f"\\n--- FIX_VOLTE rc={rc} ---\\n{o}")
+                    if rc!=0:
+                        rc2,o2=self.run([
+                            "-s",self.serial,"shell","monkey",
+                            "-p","vn.appleseed.volte","1"
+                        ],15)
+                        out.append(f"\\n--- OPEN APP FALLBACK rc={rc2} ---\\n{o2}")
+
+                self._volte_progress(75,"Đọc lại cờ VoLTE")
+                for key in [
+                    "volte_vt_enabled",
+                    "enhanced_4g_mode_enabled",
+                    "volte_enabled",
+                    "carrier_vt_enabled"
+                ]:
                     try:
-                        rc,o=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
-                        out.append(f"\nVERIFY {key} rc={rc}: {o.strip() or '—'}")
-                    except Exception as e: out.append(f"\nVERIFY {key}: ERROR {e}")
-                self._volte_progress(74,"Mở Apple Seed VoLTE")
+                        rc,o=self.run([
+                            "-s",self.serial,"shell","settings","get",
+                            "global",key
+                        ],8)
+                        out.append(f"\\nVERIFY {key} rc={rc}: {o.strip() or '—'}")
+                    except Exception as e:
+                        out.append(f"\\nVERIFY {key}: ERROR {e}")
+
+                self._volte_progress(84,"Xác minh CarrierConfig (tối đa 5 giây)")
                 try:
-                    rc,o=self.run(["-s",self.serial,"shell","monkey","-p","vn.appleseed.volte","1"],15)
-                    out.append(f"\n--- OPEN APP rc={rc} ---\n{o}")
+                    rc,o=self.run([
+                        "-s",self.serial,"shell","dumpsys","carrier_config"
+                    ],5)
+                    filt="\\n".join(
+                        x for x in o.splitlines()
+                        if any(k in x.lower() for k in [
+                            "carrier_volte",
+                            "carrier_vt_",
+                            "enhanced_4g",
+                            "hide_enhanced",
+                            "show_4g"
+                        ])
+                    )
+                    out.append(
+                        f"\\n--- CARRIER CONFIG rc={rc} ---\\n"
+                        +(filt[:7000] if filt else o[:3000])
+                    )
                 except Exception as e:
-                    out.append(f"\n--- OPEN APP ---\nERROR: {e}")
-                self._volte_progress(78,"Đọc trạng thái thiết bị")
-                for a,cmd,t in [("MODEL","getprop ro.product.model",5),("ANDROID","getprop ro.build.version.release",5)]:
-                    try:
-                        rc,o=self.run(["-s",self.serial,"shell","sh","-c",cmd],t);out.append(f"\n--- {a} rc={rc} ---\n{o}")
-                    except Exception as e:out.append(f"\n--- {a} ---\nERROR: {e}")
-                # Một số ColorOS treo dumpsys carrier_config/ims. Đây chỉ là bước VERIFY,
-                # không được phép làm Native 1-Click báo lỗi toàn bộ.
-                self._volte_progress(82,"Xác minh CarrierConfig (tối đa 3 giây)")
+                    out.append("\\n--- CARRIER CONFIG ---\\nKHÔNG PHẢN HỒI: "+str(e))
+
+                self._volte_progress(94,"Xác minh IMS (tối đa 5 giây)")
                 try:
-                    rc,o=self.run(["-s",self.serial,"shell","dumpsys","carrier_config"],4)
-                    filt="\n".join(x for x in o.splitlines() if any(k in x.lower() for k in ["carrier_volte","carrier_vt_","enhanced_4g","hide_enhanced","show_4g"]))
-                    out.append(f"\n--- CARRIER CONFIG rc={rc} ---\n{filt[:7000] if filt else o[:3000]}")
+                    rc,o=self.run([
+                        "-s",self.serial,"shell","dumpsys","ims"
+                    ],5)
+                    out.append(f"\\n--- IMS rc={rc} ---\\n{o[:6000]}")
                 except Exception as e:
-                    out.append("\n--- CARRIER CONFIG ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
-                self._volte_progress(92,"Xác minh IMS (tối đa 3 giây)")
-                try:
-                    rc,o=self.run(["-s",self.serial,"shell","dumpsys","ims"],4)
-                    out.append(f"\n--- IMS rc={rc} ---\n{o[:5000]}")
-                except Exception as e:
-                    out.append("\n--- IMS ---\nKHÔNG PHẢN HỒI (bỏ qua bước verify): "+str(e))
-                self._volte_progress(100,"Native VoLTE 1-Click hoàn tất")
-                out.append("\n===== KẾT LUẬN =====\n1-CLICK đã hoàn thành chuỗi CÀI APK → ADB FLAGS → MỞ APP. WRITE_SECURE_SETTINGS không cần cấp cho APK.")
+                    out.append("\\n--- IMS ---\\nKHÔNG PHẢN HỒI: "+str(e))
+
+                self._volte_progress(100,"VoLTE 1-Click hoàn tất")
+                if installed:
+                    if shizuku_pkg:
+                        conclusion=(
+                            "ADB flags đã ghi. Apple Seed FIX_VOLTE đã được mở; "
+                            "CarrierConfig nâng cao chỉ thành công nếu Shizuku đang chạy "
+                            "và Apple Seed đã được cấp quyền Shizuku."
+                        )
+                    else:
+                        conclusion=(
+                            "ADB flags đã ghi. Chưa có Shizuku nên chỉ hoàn tất phần "
+                            "ADB/public settings; CarrierConfig nâng cao chưa được xác nhận."
+                        )
+                else:
+                    conclusion="Chưa cài được Apple Seed VoLTE; chỉ hoàn tất phần ADB flags."
+                out.append("\\n===== KẾT LUẬN =====\\n"+conclusion)
             except Exception as e:
-                out.append("\nLỖI THỰC THI: "+str(e))
+                out.append("\\n❌ LỖI THỰC THI: "+str(e))
             finally:
-                try:self.run(["-s",self.serial,"shell","rm","-f",remote],8)
-                except:pass
-                self.showout(self.volte_out,"NATIVE 1-CLICK","\n".join(out));self.log("VoLTE Native 1-Click hoàn tất.")
+                self.showout(
+                    self.volte_out,"APPLE SEED VoLTE 1-CLICK","\\n".join(out)
+                )
+                self.log("Apple Seed VoLTE 1-Click: hoàn tất kiểm tra.")
+
         self.threaded(w)
 
     def install_volte_app(self):
