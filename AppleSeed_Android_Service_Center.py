@@ -261,6 +261,7 @@ class AndroidTool(QMainWindow):
         g=QGridLayout()
         for i,(txt,fn,k) in enumerate([
             ("🔍 PHÂN TÍCH THIẾT BỊ",self.analyze,"primary"),("⚡ VOLTE 1-CLICK",self.native_volte,"red"),
+            ("🚀 START SHIZUKU",self.start_shizuku,"green"),
             ("🔋 CHẨN ĐOÁN PIN",lambda:self.capture("dumpsys battery","PIN"),""),
             ("🌐 THÔNG TIN MẠNG",lambda:self.capture("getprop | grep -iE 'gsm|radio|baseband|operator|network'","MẠNG"),""),
             ("▣ CHỤP MÀN HÌNH",self.screenshot,""),("♻ REBOOT",lambda:self.reboot(""),"")]):
@@ -273,9 +274,10 @@ class AndroidTool(QMainWindow):
         w=QWidget(); l=QVBoxLayout(w); t=QLabel("VoLTE / IMS • APPLE SEED"); t.setStyleSheet("font-size:21pt;font-weight:800"); l.addWidget(t)
         n=QLabel("ADB VoLTE flags → Apple Seed FIX_VOLTE → Shizuku/CarrierConfig nếu đã được cấp quyền → kiểm tra IMS. Không thay đổi IMEI/SIM lock/modem."); n.setObjectName("muted"); l.addWidget(n)
         g=QGridLayout()
-        for txt,fn,k in [("⚡ KÍCH HOẠT VoLTE TỰ ĐỘNG 1-CLICK",self.native_volte,"red"),("🔎 KIỂM TRA VoLTE",self.volte_check,""),
-                         ("🧪 IMS CHUYÊN SÂU",self.ims_check,""),("📱 CÀI APP VoLTE",self.install_volte_app,"green"),
-                         ("▶ MỞ APP VoLTE",self.open_volte_app,""),("♻ REBOOT",lambda:self.reboot(""),"")]:
+        for txt,fn,k in [("⚡ KÍCH HOẠT VoLTE TỰ ĐỘNG 1-CLICK",self.native_volte,"red"),("🚀 START SHIZUKU",self.start_shizuku,"green"),
+                         ("🔎 KIỂM TRA VoLTE",self.volte_check,""),("🧪 IMS CHUYÊN SÂU",self.ims_check,""),
+                         ("📱 CÀI APP VoLTE",self.install_volte_app,"green"),("▶ MỞ APP VoLTE",self.open_volte_app,""),
+                         ("♻ REBOOT",lambda:self.reboot(""),"")]:
             self.button(g,txt,fn,k)
         l.addLayout(g); self.volte_out=QTextEdit(); self.volte_out.setReadOnly(True); l.addWidget(self.volte_out,1); return w
 
@@ -635,19 +637,105 @@ class AndroidTool(QMainWindow):
         self.threaded(w)
 
     def start_shizuku_via_adb(self):
-        """Start Shizuku with its official ADB startup script."""
+        """Khởi động Shizuku qua ADB và xác nhận server thật sự đang chạy.
+        
+        Android 8.x không có Wireless debugging hiện đại; sau reboot,
+        Shizuku cần được starter của Shizuku khởi động lại bởi ADB.
+        """
+        if not self.serial:
+            return False, "Chưa chọn thiết bị ADB."
+
+        try:
+            pkg_out = self.shell("pm list packages moe.shizuku.privileged.api", 8)
+        except Exception as e:
+            return False, "Không kiểm tra được package Shizuku: " + str(e)
+
+        if "moe.shizuku.privileged.api" not in pkg_out:
+            return False, "Chưa cài Shizuku (moe.shizuku.privileged.api)."
+
+        # Nếu server đã chạy thì không cần kill/start lại.
+        try:
+            pid = self.shell("pidof moe.shizuku.privileged.api", 8).strip()
+            if pid:
+                return True, "Shizuku đang chạy. PID=" + pid
+        except Exception:
+            pass
+
         commands=[
             "sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh",
             "sh /storage/emulated/0/Android/data/moe.shizuku.privileged.api/start.sh",
         ]
         last=""
         for cmd in commands:
-            rc,out=self.run(["-s",self.serial,"shell","sh","-c",cmd],20)
-            last=out.strip()
-            if rc==0:
+            try:
+                rc,out=self.run(["-s",self.serial,"shell","sh","-c",cmd],30)
+                last=out.strip()
                 time.sleep(1.5)
-                return True,last
-        return False,last
+
+                # Không chỉ dựa vào exit code: phải xác nhận process.
+                try:
+                    pid=self.shell("pidof moe.shizuku.privileged.api", 8).strip()
+                except Exception:
+                    pid=""
+
+                if rc==0 and pid:
+                    return True, (
+                        "Shizuku START OK. PID=" + pid +
+                        ("\n" + last if last else "")
+                    )
+            except Exception as e:
+                last=str(e)
+
+        return False, (
+            "Không xác nhận được Shizuku đang chạy."
+            + ("\n" + last if last else "")
+        )
+
+    def start_shizuku(self):
+        """Nút 1-click: ADB -> Shizuku starter -> PID verification."""
+        if not self.require():
+            return
+
+        def w():
+            self._volte_progress(15, "Kiểm tra Shizuku")
+            ok,msg=self.start_shizuku_via_adb()
+
+            if ok:
+                self._volte_progress(100, "Shizuku đang chạy")
+                self.showout(
+                    self.volte_out,
+                    "START SHIZUKU",
+                    "===== APPLE SEED — START SHIZUKU =====\\n\\n"
+                    "✅ " + msg +
+                    "\\n\\n"
+                    "Khách không cần mở CMD. Apple Seed đã tự gọi ADB "
+                    "và xác nhận server Shizuku bằng PID."
+                )
+                self.log("Shizuku: START OK — " + msg.replace("\\n", " | "))
+                self.post(lambda: QMessageBox.information(
+                    self,
+                    "Shizuku",
+                    "✅ Shizuku đang chạy.\\n\\n" + msg
+                ))
+            else:
+                self._volte_progress(100, "Không khởi động được Shizuku")
+                self.showout(
+                    self.volte_out,
+                    "START SHIZUKU",
+                    "===== APPLE SEED — START SHIZUKU =====\\n\\n"
+                    "❌ " + msg +
+                    "\\n\\n"
+                    "Kiểm tra USB debugging, ADB authorization và "
+                    "Shizuku đã được cài trên máy."
+                )
+                self.log("Shizuku: START FAILED — " + msg)
+                self.post(lambda: QMessageBox.warning(
+                    self,
+                    "Shizuku",
+                    "❌ Không khởi động được Shizuku.\\n\\n" + msg
+                ))
+
+        self.threaded(w)
 
     def native_volte(self):
         """VoLTE 1-click bằng ADB + Apple Seed VoLTE app.
