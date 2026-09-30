@@ -130,51 +130,49 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openVolteSettings() {
-        // Không hard-code Activity của com.android.phone/ColorOS.
-        // ColorOS thay đổi package/activity giữa từng phiên bản.
-        // Query các Intent mà ROM thực sự export rồi mở Activity đầu tiên hợp lệ.
+        // ColorOS/Oppo có thể resolve Activity khác nhau theo từng bản ROM.
+        // QUAN TRỌNG: không lấy ResolveInfo rồi ép setComponent vì có ROM
+        // trả về component không thể gọi trực tiếp. Hãy để Android tự resolve.
         val actions = listOf(
             "android.settings.MOBILE_NETWORK_SETTINGS",
+            "android.settings.NETWORK_SETTINGS",
             "android.settings.NETWORK_OPERATOR_SETTINGS",
-            "android.settings.WIRELESS_SETTINGS",
-            "android.settings.SETTINGS"
+            "android.settings.DATA_ROAMING_SETTINGS",
+            "android.settings.APN_SETTINGS",
+            Settings.ACTION_WIRELESS_SETTINGS
         )
 
         var lastError: Throwable? = null
 
+        // 1) Để hệ thống tự resolve Intent — không hard-code com.android.phone
+        // và không ép component của ColorOS.
         for (action in actions) {
             try {
-                val intent = Intent(action)
-                val matches = packageManager.queryIntentActivities(
-                    intent,
-                    android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
-                )
-
-                if (matches.isEmpty()) continue
-
-                // Ưu tiên Settings/ColorOS Wireless Settings nếu ROM trả về nhiều activity.
-                val preferred = matches.firstOrNull { ri ->
-                    val pkg = ri.activityInfo.packageName.lowercase()
-                    pkg.contains("wirelesssettings") ||
-                        pkg.contains("settings")
-                } ?: matches.first()
-
-                val component = ComponentName(
-                    preferred.activityInfo.packageName,
-                    preferred.activityInfo.name
-                )
-
-                startActivity(Intent(action).apply {
-                    setComponent(component)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
+                startActivity(Intent(action))
                 return
             } catch (e: Throwable) {
                 lastError = e
             }
         }
 
-        // Fallback cuối: mở trang Settings chung, không dùng explicit component.
+        // 2) Nếu Shizuku đang chạy, dùng đúng Android shell resolver.
+        // Cách này để PackageManager/ColorOS tự chọn Activity như khi chạy
+        // "adb shell am start -a ...", thay vì app tự đoán component.
+        if (shizukuGrantedState) {
+            for (action in actions) {
+                try {
+                    val result = runShizukuCommand("am", "start", "-a", action)
+                    if (!result.startsWith("ERROR:", ignoreCase = true)) {
+                        return
+                    }
+                    lastError = IllegalStateException(result)
+                } catch (e: Throwable) {
+                    lastError = e
+                }
+            }
+        }
+
+        // 3) Fallback cuối: mở Settings gốc.
         try {
             startActivity(Intent(Settings.ACTION_SETTINGS))
             return
@@ -183,7 +181,7 @@ class MainActivity : ComponentActivity() {
         }
 
         throw IllegalStateException(
-            "ROM không có Activity Settings có thể mở" +
+            "ROM không cho mở màn hình Cài đặt mạng/VoLTE" +
                 (lastError?.message?.let { ": $it" } ?: "")
         )
     }
