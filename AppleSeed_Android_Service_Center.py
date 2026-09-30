@@ -1,4 +1,4 @@
-import os, sys, time, shutil, subprocess, threading
+import os, sys, time, shutil, subprocess, threading, tempfile, zipfile, urllib.request, json
 from pathlib import Path
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QFont, QPainterPath
 from PySide6.QtCore import Qt, QEvent, QTimer
@@ -139,6 +139,7 @@ class AndroidTool(QMainWindow):
         self.button(r,"CHỌN ADB.EXE",self.choose_adb)
         self.button(r,"RESTART ADB",self.restart_adb); self.button(r,"🩺 CHẨN ĐOÁN ADB",self.adb_diagnose)
         self.button(r,"📱 LIVE SCREEN",self.start_mirror,"green")
+        self.button(r,"⬇ CẬP NHẬT",self.update_from_github,"primary")
         r.addStretch(); self.devlabel=QLabel("Chưa chọn"); self.devlabel.setObjectName("muted"); r.addWidget(self.devlabel)
         main.addWidget(bar)
         self.tabs=QTabWidget(); main.addWidget(self.tabs,1)
@@ -367,6 +368,110 @@ class AndroidTool(QMainWindow):
         try:self.run(["kill-server"],10)
         except:pass
         self.refresh_devices()
+
+    def update_from_github(self):
+        """Đồng bộ bản mới nhất từ GitHub rồi tự khởi động lại Apple Seed."""
+        if not self.ask(
+            "CẬP NHẬT APPLE SEED",
+            "Đồng bộ Apple Seed với GitHub ngay bây giờ?\n\n"
+            "Tool sẽ lấy bản main mới nhất, cập nhật file và tự mở lại.\n"
+            "Các thư mục backups/ sẽ được giữ lại."
+        ):
+            return
+
+        def w():
+            self._volte_progress(10,"Kiểm tra GitHub...")
+            try:
+                remote_url="https://github.com/Totrungtv/AppleSeed-IMS.git"
+                current=""
+                try:
+                    rc,h=self.run(["rev-parse","HEAD"],10)
+                    if rc==0:current=h.strip()
+                except Exception:
+                    pass
+
+                # Ưu tiên Git để đồng bộ đúng như sync_github.bat hiện tại.
+                git=shutil.which("git")
+                if git:
+                    self._volte_progress(25,"Đang lấy bản mới từ GitHub...")
+                    if not (self.base/".git").exists():
+                        self.run_git([git,"init"],20)
+                    self.run_git([git,"remote","set-url","origin",remote_url],20,allow_error=True)
+                    self.run_git([git,"fetch","origin","main"],90)
+                    rc_new,out=self.run_git([git,"rev-parse","origin/main"],20)
+                    latest=out.strip() if rc_new==0 else ""
+
+                    if latest and latest==current:
+                        self._volte_progress(100,"Đã là bản mới nhất")
+                        self.log("✓ Apple Seed đã là bản GitHub mới nhất.")
+                        self.post(lambda:QMessageBox.information(
+                            self,"Apple Seed — Cập nhật","Bạn đang dùng bản mới nhất trên GitHub."
+                        ))
+                        return
+
+                    self._volte_progress(60,"Đang đồng bộ mã nguồn...")
+                    self.run_git([git,"reset","--hard","origin/main"],90)
+                    self.run_git([git,"checkout","-B","main","origin/main"],30)
+                    self._volte_progress(100,"Cập nhật hoàn tất")
+                    self.log("✓ Đã đồng bộ Apple Seed với GitHub.")
+                else:
+                    # Máy không có Git: tải ZIP main trực tiếp từ GitHub.
+                    self._volte_progress(30,"Không có Git — tải ZIP GitHub...")
+                    url="https://github.com/Totrungtv/AppleSeed-IMS/archive/refs/heads/main.zip"
+                    with tempfile.TemporaryDirectory(prefix="appleseed_update_") as td:
+                        zpath=Path(td)/"main.zip"
+                        urllib.request.urlretrieve(url,str(zpath))
+                        self._volte_progress(65,"Giải nén bản cập nhật...")
+                        with zipfile.ZipFile(zpath) as z:z.extractall(td)
+                        roots=[p for p in Path(td).iterdir() if p.is_dir() and p.name.startswith("AppleSeed-IMS-")]
+                        if not roots:raise RuntimeError("ZIP GitHub không đúng cấu trúc.")
+                        source=roots[0]
+                        for item in source.iterdir():
+                            if item.name in (".git","backups"):continue
+                            dest=self.base/item.name
+                            if item.is_dir():
+                                shutil.copytree(item,dest,dirs_exist_ok=True)
+                            else:
+                                shutil.copy2(item,dest)
+                    self._volte_progress(100,"Cập nhật hoàn tất")
+                    self.log("✓ Đã tải và đồng bộ bản GitHub mới nhất.")
+
+                self.post(lambda:self.restart_after_update())
+            except Exception as e:
+                self._volte_progress(0,"Cập nhật thất bại")
+                self.log("❌ UPDATE ERROR: "+str(e))
+                self.post(lambda e=str(e):QMessageBox.warning(
+                    self,"Apple Seed — Cập nhật lỗi",
+                    "Không cập nhật được từ GitHub.\n\n"+e
+                ))
+
+        self.threaded(w)
+
+    def run_git(self,cmd,timeout=60,allow_error=False):
+        p=subprocess.run(
+            cmd,capture_output=True,text=True,encoding="utf-8",errors="replace",
+            timeout=timeout,cwd=str(self.base),
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name=="nt" else 0)
+        )
+        out=((p.stdout or "")+(p.stderr or "")).strip()
+        if p.returncode and not allow_error:
+            raise RuntimeError(out or f"Git rc={p.returncode}")
+        return p.returncode,out
+
+    def restart_after_update(self):
+        self.log("↻ Đang khởi động lại Apple Seed...")
+        try:self.stop_mirror()
+        except:pass
+        try:
+            script=Path(__file__).resolve()
+            subprocess.Popen(
+                [sys.executable,str(script)],
+                cwd=str(self.base),
+                creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP if os.name=="nt" else 0)
+            )
+            QTimer.singleShot(350,self.close)
+        except Exception as e:
+            QMessageBox.warning(self,"Cập nhật","Đã cập nhật xong nhưng không tự mở lại:\n"+str(e))
 
     def start_mirror(self):
         """Mở Live Screen bằng scrcpy: video thật, 60 FPS, chuột + bàn phím."""
