@@ -95,6 +95,8 @@ class AndroidTool(QMainWindow):
         super().__init__()
         self.base=Path(__file__).resolve().parent
         self.adb=self.find_adb()
+        self.scrcpy=self.find_scrcpy()
+        self.scrcpy_proc=None
         self.serial=""
         self.setWindowTitle(f"{APP} • {VER}")
         self.resize(1580,960); self.setMinimumSize(1180,720)
@@ -136,6 +138,7 @@ class AndroidTool(QMainWindow):
         self.button(r,"↻ LÀM MỚI",self.refresh_devices)
         self.button(r,"CHỌN ADB.EXE",self.choose_adb)
         self.button(r,"RESTART ADB",self.restart_adb); self.button(r,"🩺 CHẨN ĐOÁN ADB",self.adb_diagnose)
+        self.button(r,"📱 LIVE SCREEN",self.start_mirror,"green")
         r.addStretch(); self.devlabel=QLabel("Chưa chọn"); self.devlabel.setObjectName("muted"); r.addWidget(self.devlabel)
         main.addWidget(bar)
         self.tabs=QTabWidget(); main.addWidget(self.tabs,1)
@@ -160,6 +163,19 @@ class AndroidTool(QMainWindow):
         x=QPushButton(text); x.clicked.connect(lambda checked=False, b=x, f=fn: (b.setEnabled(False), self.status.showMessage("⏳ "+b.text()+" ..."), f(), b.setEnabled(True)))
         if kind:x.setObjectName(kind)
         layout.addWidget(x); return x
+
+    def find_scrcpy(self):
+        # Tìm scrcpy đi kèm Apple Seed trước, sau đó mới dùng bản cài trong PATH.
+        names=["scrcpy.exe","scrcpy"] if os.name=="nt" else ["scrcpy"]
+        candidates=[]
+        for folder in ("scrcpy","tools/scrcpy","platform-tools"):
+            for name in names:candidates.append(self.base/folder/name)
+        for name in names:
+            p=shutil.which(name)
+            if p:candidates.append(Path(p))
+        for p in candidates:
+            if Path(p).exists():return str(p)
+        return None
 
     def find_adb(self):
         # Ưu tiên ADB đi kèm tool, nhưng tự fallback sang ADB trong PATH.
@@ -318,6 +334,7 @@ class AndroidTool(QMainWindow):
                     if rows:
                         self.devices.setCurrentIndex(0)
                         self.select_device()
+                        if self.isVisible():QTimer.singleShot(450,self.start_mirror)
                     else:
                         self.serial=""
                         self.badge.setText("ADB: CHƯA SẴN SÀNG")
@@ -332,7 +349,9 @@ class AndroidTool(QMainWindow):
         if i<0:return
         self.serial=self.devices.itemData(i) or ""; on=bool(self.serial);self.badge.setText("ADB: KẾT NỐI" if on else "ADB: CHƯA SẴN SÀNG");self.badge.setStyleSheet(self.badge_css(on));self.devlabel.setText(self.serial or "Chưa chọn")
         self.status.showMessage(("📱 Đã chọn thiết bị: "+self.serial) if on else "Chưa chọn thiết bị",4000)
-        if on:self.refresh_info()
+        if on:
+            self.refresh_info()
+            if self.isVisible():QTimer.singleShot(350,self.start_mirror)
 
     def refresh_info(self):
         def w():
@@ -343,9 +362,64 @@ class AndroidTool(QMainWindow):
         self.threaded(w)
 
     def restart_adb(self):
+        try:self.stop_mirror()
+        except:pass
         try:self.run(["kill-server"],10)
         except:pass
         self.refresh_devices()
+
+    def start_mirror(self):
+        """Mở Live Screen bằng scrcpy: video thật, 60 FPS, chuột + bàn phím."""
+        if not self.require():return
+        if self.scrcpy_proc is not None and self.scrcpy_proc.poll() is None:
+            self.log("LIVE SCREEN: đã chạy.")
+            return
+        self.scrcpy=self.find_scrcpy() or self.scrcpy
+        if not self.scrcpy:
+            self.log("❌ Không tìm thấy scrcpy.exe.")
+            self.post(lambda:QMessageBox.information(
+                self,"Apple Seed — Live Screen",
+                "Chưa có scrcpy.exe.\n\nĐặt bộ scrcpy chính thức vào thư mục:\n"
+                "scrcpy\\scrcpy.exe\n\nSau đó bấm LIVE SCREEN lại."
+            ))
+            return
+        env=os.environ.copy()
+        adb_parent=str(Path(self.adb).resolve().parent) if self.adb else ""
+        if adb_parent:env["PATH"]=adb_parent+os.pathsep+env.get("PATH","")
+        try:
+            geo=self.geometry()
+            x=geo.x()+geo.width()+12
+            y=max(30,geo.y()+28)
+        except Exception:
+            x=1280;y=40
+        cmd=[
+            self.scrcpy,"--serial",self.serial,
+            "--window-title",f"Apple Seed • Android Live • {self.serial}",
+            "--max-fps=60","--max-size=900","--video-bit-rate=8M",
+            "--no-audio","--stay-awake",
+            "--window-width=360","--window-height=800",
+            f"--window-x={x}",f"--window-y={y}"
+        ]
+        try:
+            self.scrcpy_proc=subprocess.Popen(
+                cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,env=env,
+                creationflags=(subprocess.CREATE_NO_WINDOW if os.name=="nt" else 0)
+            )
+            self.log("📱 LIVE SCREEN: đã khởi động 60 FPS.")
+            self.status.showMessage("📱 Live Screen Android đang chạy • 60 FPS",5000)
+        except Exception as e:
+            self.scrcpy_proc=None
+            self.log("❌ LIVE SCREEN ERROR: "+str(e))
+
+    def stop_mirror(self):
+        p=self.scrcpy_proc
+        self.scrcpy_proc=None
+        if p is not None and p.poll() is None:
+            try:p.terminate()
+            except:pass
+            self.log("LIVE SCREEN: đã đóng.")
+
 
     def choose_adb(self):
         p,_=QFileDialog.getOpenFileName(self,"Chọn adb.exe","","ADB (*.exe)")
@@ -896,6 +970,11 @@ class AndroidTool(QMainWindow):
             try:self.showout(self.adb_out,"ADB SHELL",self.shell(c,60))
             except Exception as e:self.showout(self.adb_out,"ADB SHELL","LỖI: "+str(e))
         self.threaded(w)
+
+    def closeEvent(self,e):
+        try:self.stop_mirror()
+        except:pass
+        super().closeEvent(e)
 
 def shquote(s): return "'"+str(s).replace("'","'\\''")+"'"
 
