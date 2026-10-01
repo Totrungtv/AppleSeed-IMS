@@ -399,7 +399,7 @@ class AndroidTool(QMainWindow):
         threading.Thread(target=w,daemon=True).start()
 
     def auto_start_shizuku_after_reconnect(self):
-        """Sau reboot/reconnect: khôi phục VoLTE + Shizuku đúng 1 lần."""
+        """Sau reboot/reconnect: chờ SIM/CarrierConfig ổn định rồi mới FIX_VOLTE."""
         if not self.serial or self._shizuku_autostart_busy:
             return
         serial=self.serial
@@ -409,7 +409,7 @@ class AndroidTool(QMainWindow):
             try:
                 # 1) Chờ Android boot hoàn tất.
                 boot_ok=False
-                for _ in range(12):
+                for _ in range(20):
                     if serial != self.serial:
                         return
                     try:
@@ -427,8 +427,38 @@ class AndroidTool(QMainWindow):
                     self.log("❌ Sau reboot: Android chưa báo boot_completed=1.")
                     return
 
-                # 2) Khôi phục các global VoLTE flags trước.
-                # Các flag này không nên phụ thuộc vào việc Shizuku đã chạy.
+                # 2) KHÔNG FIX CarrierConfig ngay lúc boot.
+                # ColorOS/Telephony có thể còn đang nạp SIM và sau đó
+                # tự reload CarrierConfig, làm override sớm bị mất.
+                sim_ready=False
+                for _ in range(30):
+                    if serial != self.serial:
+                        return
+                    try:
+                        _,sim=self.run(
+                            ["-s",serial,"shell","getprop","gsm.sim.state"],8
+                        )
+                        _,op=self.run(
+                            ["-s",serial,"shell","getprop","gsm.operator.alpha"],8
+                        )
+                        sim=(sim or "").strip().upper()
+                        op=(op or "").strip()
+                        if "READY" in sim or "LOADED" in sim:
+                            sim_ready=True
+                            self.log(
+                                "📶 Sau reboot: SIM đã sẵn sàng"
+                                + (f" ({sim})" if sim else "")
+                                + (f" • {op}" if op else "")
+                            )
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(2.0)
+
+                if not sim_ready:
+                    self.log("⚠ Sau reboot: SIM chưa báo READY/LOADED sau thời gian chờ; vẫn thử FIX_VOLTE.")
+
+                # 3) Khôi phục các global VoLTE flags.
                 volte_keys=[
                     ("volte_vt_enabled","1"),
                     ("enhanced_4g_mode_enabled","1"),
@@ -448,33 +478,23 @@ class AndroidTool(QMainWindow):
                     except Exception as e:
                         self.log(f"⚠ Restore {key}: {e}")
 
-                # 3) Nếu Shizuku đã chạy thì tuyệt đối không restart.
-                pid=""
-                for proc in ("shizuku_server","moe.shizuku.privileged.api"):
-                    try:
-                        pid=self.shell("pidof "+proc,5).strip()
-                    except Exception:
-                        pid=""
-                    if pid:
-                        break
-
-                if pid:
-                    self.log("✅ Shizuku đã chạy sau reboot. Không restart. PID="+pid)
-                else:
-                    ok,msg=self.start_shizuku_via_adb()
-                    if not ok:
-                        self.log(
-                            "❌ Sau reboot: không khởi động được Shizuku — "
-                            + msg.replace("\\n"," | ")
-                        )
-                        return
+                # 4) start_shizuku_via_adb() đã có PID + ps fallback,
+                # nên gọi thẳng hàm này: nếu Shizuku đang chạy thì không restart.
+                ok,msg=self.start_shizuku_via_adb()
+                if not ok:
                     self.log(
-                        "✅ Sau reboot: Shizuku tự khởi động OK — "
-                        + msg.replace("\\n"," | ")
+                        "❌ Sau reboot: không khởi động được Shizuku — "
+                        + msg.replace("\n"," | ")
                     )
+                    return
+                self.log(
+                    "✅ Sau reboot: Shizuku OK — "
+                    + msg.replace("\n"," | ")
+                )
 
-                # 4) Cho Android/ColorOS ổn định rồi mới gọi FIX_VOLTE.
-                time.sleep(2.0)
+                # 5) Đợi telephony/CarrierConfig ổn định thêm trước FIX.
+                time.sleep(5.0)
+
                 try:
                     installed="package:vn.appleseed.volte" in self.shell(
                         "pm list packages vn.appleseed.volte",8
@@ -486,27 +506,92 @@ class AndroidTool(QMainWindow):
                     self.log("⚠ Sau reboot: chưa cài AppleSeed VoLTE, bỏ qua FIX_VOLTE.")
                     return
 
-                rc,o=self.run([
-                    "-s",serial,"shell","am","start",
-                    "-a","vn.appleseed.volte.action.FIX_VOLTE",
-                    "-n","vn.appleseed.volte/.MainActivity"
-                ],20)
-                self.log(
-                    "📡 Sau reboot: FIX_VOLTE rc="+str(rc)
-                    + (" | "+o.strip() if o.strip() else "")
-                )
+                # 6) FIX_VOLTE phải có RETRY vì CarrierConfig có thể reload
+                # sau khi SIM vừa lên. Mỗi lần app được gọi sẽ chạy
+                # CarrierConfig override + IMS reset + props.
+                fixed=False
+                last_output=""
+                for attempt in range(1,5):
+                    if serial != self.serial:
+                        return
 
-                # 5) Xác nhận flags sau khi FIX_VOLTE chạy.
-                for key,_ in volte_keys:
+                    self.log(f"📡 Sau reboot: FIX_VOLTE lần {attempt}/4...")
+                    rc,o=self.run([
+                        "-s",serial,"shell","am","start",
+                        "-W",
+                        "-a","vn.appleseed.volte.action.FIX_VOLTE",
+                        "-n","vn.appleseed.volte/.MainActivity"
+                    ],30)
+                    last_output=(o or "").strip()
+                    self.log(
+                        f"📡 FIX_VOLTE #{attempt}: rc={rc}"
+                        + (f" | {last_output}" if last_output else "")
+                    )
+
+                    # Cho Activity/CarrierConfig/Phone process thời gian áp dụng.
+                    time.sleep(4.0)
+
+                    # Kiểm tra flags.
+                    values={}
+                    for key,_ in volte_keys:
+                        try:
+                            _,v=self.run([
+                                "-s",serial,"shell","settings","get","global",key
+                            ],8)
+                            values[key]=v.strip()
+                        except Exception:
+                            values[key]=""
+
+                    all_flags_ok=all(values.get(k)=="1" for k,_ in volte_keys)
+                    self.log(
+                        "VERIFY VoLTE flags: "
+                        + " ".join(f"{k}={values.get(k,'—') or '—'}" for k,_ in volte_keys)
+                    )
+
+                    # Kiểm tra CarrierConfig sau khi FIX.
+                    carrier_ok=False
                     try:
-                        _,v=self.run([
-                            "-s",serial,"shell","settings","get","global",key
+                        _,cc=self.run([
+                            "-s",serial,"shell","dumpsys","carrier_config"
                         ],8)
-                        self.log(f"VERIFY {key}={v.strip() or '—'}")
+                        low=(cc or "").lower()
+                        carrier_ok=(
+                            "carrier_volte_available_bool=true" in low
+                            or "carrier_vt_available_bool=true" in low
+                            or "carrier_wfc_ims_available_bool=true" in low
+                        )
                     except Exception:
-                        pass
+                        carrier_ok=False
 
-                self.log("✅ Sau reboot: hoàn tất khôi phục VoLTE/Shizuku.")
+                    if all_flags_ok and (carrier_ok or rc==0):
+                        fixed=True
+                        self.log(
+                            f"✅ Sau reboot: FIX_VOLTE thành công ở lần {attempt}."
+                            + (" CarrierConfig đã thấy override." if carrier_ok else "")
+                        )
+                        break
+
+                    if attempt<4:
+                        self.log("⚠ CarrierConfig/IMS chưa ổn định, chờ 5 giây rồi FIX lại.")
+                        time.sleep(5.0)
+
+                if not fixed:
+                    self.log(
+                        "❌ Sau reboot: FIX_VOLTE chưa xác nhận hoàn tất sau 4 lần."
+                        + (f" | last={last_output}" if last_output else "")
+                    )
+                    return
+
+                # 7) Một lần force-stop phone cuối để IMS/Settings đọc lại config.
+                try:
+                    self.run([
+                        "-s",serial,"shell","am","force-stop","com.android.phone"
+                    ],15)
+                    time.sleep(3.0)
+                except Exception as e:
+                    self.log("⚠ Không force-stop được com.android.phone: "+str(e))
+
+                self.log("✅ Sau reboot: hoàn tất khôi phục VoLTE + CarrierConfig + IMS.")
 
             except Exception as e:
                 self.log("🔄 Auto VoLTE/Shizuku ERROR: "+str(e))
