@@ -100,6 +100,30 @@ object CarrierConfigBridge {
             putBoolean("hide_ims_apn_bool", false)
         }
 
+        // Preferred path: use the telephony shell command with -p (persistent).
+        // AOSP stores persistent overrides and restores them after reboot.
+        // This also avoids depending on hidden API signatures that differ by Android/OEM.
+        val persistentShellOk = runCatching {
+            persistable.keySet().all { key ->
+                val value = persistable.get(key)
+                val textValue = when (value) {
+                    is Boolean -> if (value) "true" else "false"
+                    is Int -> value.toString()
+                    is Long -> value.toString()
+                    is String -> value
+                    else -> return@all false
+                }
+                val result = shellCommand(
+                    "cmd", "phone", "cc", "set-value",
+                    "-s", SubscriptionManager.getSlotIndex(subId).toString(),
+                    "-p", key, textValue
+                )
+                !result.startsWith("ERROR:", ignoreCase = true)
+            }
+        }.getOrDefault(false)
+
+        Log.i(TAG, "Persistent CarrierConfig shell path=$persistentShellOk")
+
         val loader = runCatching { getSystemServiceBinder(context, Context.CARRIER_CONFIG_SERVICE) }
             .mapCatching {
                 asInternalInterface("com.android.internal.telephony.ICarrierConfigLoader", it)
@@ -170,6 +194,8 @@ object CarrierConfigBridge {
         runCatching { shellCommand("am", "force-stop", "com.android.phone") }
 
         val propOk = propResults.count { it }
-        return "CarrierConfig OK · subId=$subId · slot=$slot · IMS reset=" + (if (imsResetOk) "OK" else "SKIP") + " · props=$propOk/4"
+        return "CarrierConfig OK · subId=$subId · slot=$slot · persistent=" +
+            (if (persistentShellOk) "SHELL" else if (overrideApplied) "API" else "NO") +
+            " · IMS reset=" + (if (imsResetOk) "OK" else "SKIP") + " · props=$propOk/4"
     }
 }
