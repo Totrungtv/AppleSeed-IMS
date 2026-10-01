@@ -761,15 +761,25 @@ class AndroidTool(QMainWindow):
             return False, "Chưa cài Shizuku (moe.shizuku.privileged.api)."
 
         def get_shizuku_pid():
-            # Trên máy này server thực tế chạy dưới tên shizuku_server.
-            # Một số bản có thể trả PID theo package/process name.
+            # Shizuku server trên CPH1905 thực tế chạy tên shizuku_server.
+            # pidof có thể không hoạt động giống nhau giữa các toybox,
+            # nên dùng cả pidof và ps làm fallback.
             for proc in ("shizuku_server", "moe.shizuku.privileged.api"):
                 try:
                     pid=self.shell("pidof " + proc, 5).strip()
                     if pid:
-                        return pid
+                        return pid.split()[0]
                 except Exception:
                     pass
+            try:
+                ps=self.shell("ps", 5)
+                for line in ps.splitlines():
+                    if "shizuku_server" in line:
+                        parts=line.split()
+                        if len(parts) >= 2 and parts[1].isdigit():
+                            return parts[1]
+            except Exception:
+                pass
             return "" 
 
         pid=get_shizuku_pid()
@@ -793,7 +803,7 @@ class AndroidTool(QMainWindow):
                 last=(out or "").strip()
 
                 if rc==0:
-                    for _ in range(8):
+                    for _ in range(16):
                         time.sleep(0.75)
                         pid=get_shizuku_pid()
                         if pid:
