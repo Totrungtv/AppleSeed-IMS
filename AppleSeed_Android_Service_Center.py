@@ -763,11 +763,7 @@ class AndroidTool(QMainWindow):
         self.threaded(w)
 
     def start_shizuku_via_adb(self):
-        """Khởi động Shizuku qua ADB và xác nhận server thật sự đang chạy.
-        
-        Android 8.x không có Wireless debugging hiện đại; sau reboot,
-        Shizuku cần được starter của Shizuku khởi động lại bởi ADB.
-        """
+        """Khởi động Shizuku bằng đúng kiểu ADB đã test thành công trên CPH1905."""
         if not self.serial:
             return False, "Chưa chọn thiết bị ADB."
 
@@ -779,42 +775,60 @@ class AndroidTool(QMainWindow):
         if "moe.shizuku.privileged.api" not in pkg_out:
             return False, "Chưa cài Shizuku (moe.shizuku.privileged.api)."
 
-        # Nếu server đã chạy thì không cần kill/start lại.
         try:
-            pid = self.shell("pidof moe.shizuku.privileged.api", 8).strip()
+            pid = self.shell("pidof moe.shizuku.privileged.api", 5).strip()
             if pid:
                 return True, "Shizuku đang chạy. PID=" + pid
         except Exception:
             pass
 
-        commands=[
-            "sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh",
-            "sh /storage/emulated/0/Android/data/moe.shizuku.privileged.api/start.sh",
+        paths=[
+            "/sdcard/Android/data/moe.shizuku.privileged.api/start.sh",
+            "/storage/emulated/0/Android/data/moe.shizuku.privileged.api/start.sh",
         ]
         last=""
-        for cmd in commands:
-            try:
-                rc,out=self.run(["-s",self.serial,"shell","sh","-c",cmd],30)
-                last=out.strip()
-                time.sleep(1.5)
 
-                # Không chỉ dựa vào exit code: phải xác nhận process.
+        for path in paths:
+            try:
+                # Không dùng sh -c. Phải giống lệnh đã test thủ công:
+                # adb shell sh /sdcard/.../start.sh
+                rc,out=self.run(
+                    ["-s",self.serial,"shell","sh",path],
+                    15
+                )
+                last=(out or "").strip()
+
+                if rc==0:
+                    for _ in range(8):
+                        time.sleep(0.75)
+                        try:
+                            pid=self.shell(
+                                "pidof moe.shizuku.privileged.api", 5
+                            ).strip()
+                        except Exception:
+                            pid=""
+                        if pid:
+                            return True, (
+                                "Shizuku START OK. PID=" + pid +
+                                ("\\n"+last if last else "")
+                            )
+
+            except subprocess.TimeoutExpired as e:
+                last="START SHIZUKU TIMEOUT: "+str(e)
                 try:
-                    pid=self.shell("pidof moe.shizuku.privileged.api", 8).strip()
+                    pid=self.shell(
+                        "pidof moe.shizuku.privileged.api", 5
+                    ).strip()
                 except Exception:
                     pid=""
-
-                if rc==0 and pid:
-                    return True, (
-                        "Shizuku START OK. PID=" + pid +
-                        ("\n" + last if last else "")
-                    )
+                if pid:
+                    return True, "Shizuku START OK sau timeout. PID="+pid
             except Exception as e:
                 last=str(e)
 
         return False, (
             "Không xác nhận được Shizuku đang chạy."
-            + ("\n" + last if last else "")
+            + ("\\n"+last if last else "")
         )
 
     def start_shizuku(self):
