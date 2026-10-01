@@ -423,10 +423,14 @@ class AndroidTool(QMainWindow):
 
                 # QUAN TRỌNG: kiểm tra PID trước.
                 # Nếu Shizuku đang chạy thì tuyệt đối không gọi start.sh.
-                try:
-                    pid=self.shell("pidof moe.shizuku.privileged.api",5).strip()
-                except Exception:
-                    pid=""
+                pid=""
+                for proc in ("shizuku_server", "moe.shizuku.privileged.api"):
+                    try:
+                        pid=self.shell("pidof "+proc,5).strip()
+                    except Exception:
+                        pid=""
+                    if pid:
+                        break
 
                 if pid:
                     self.log("✅ Shizuku đã chạy sau reconnect. Không restart. PID="+pid)
@@ -756,12 +760,21 @@ class AndroidTool(QMainWindow):
         if "moe.shizuku.privileged.api" not in pkg_out:
             return False, "Chưa cài Shizuku (moe.shizuku.privileged.api)."
 
-        try:
-            pid = self.shell("pidof moe.shizuku.privileged.api", 5).strip()
-            if pid:
-                return True, "Shizuku đang chạy. PID=" + pid
-        except Exception:
-            pass
+        def get_shizuku_pid():
+            # Trên máy này server thực tế chạy dưới tên shizuku_server.
+            # Một số bản có thể trả PID theo package/process name.
+            for proc in ("shizuku_server", "moe.shizuku.privileged.api"):
+                try:
+                    pid=self.shell("pidof " + proc, 5).strip()
+                    if pid:
+                        return pid
+                except Exception:
+                    pass
+            return "" 
+
+        pid=get_shizuku_pid()
+        if pid:
+            return True, "Shizuku đang chạy. PID=" + pid
 
         paths=[
             "/sdcard/Android/data/moe.shizuku.privileged.api/start.sh",
@@ -782,12 +795,7 @@ class AndroidTool(QMainWindow):
                 if rc==0:
                     for _ in range(8):
                         time.sleep(0.75)
-                        try:
-                            pid=self.shell(
-                                "pidof moe.shizuku.privileged.api", 5
-                            ).strip()
-                        except Exception:
-                            pid=""
+                        pid=get_shizuku_pid()
                         if pid:
                             return True, (
                                 "Shizuku START OK. PID=" + pid +
@@ -796,12 +804,7 @@ class AndroidTool(QMainWindow):
 
             except subprocess.TimeoutExpired as e:
                 last="START SHIZUKU TIMEOUT: "+str(e)
-                try:
-                    pid=self.shell(
-                        "pidof moe.shizuku.privileged.api", 5
-                    ).strip()
-                except Exception:
-                    pid=""
+                pid=get_shizuku_pid()
                 if pid:
                     return True, "Shizuku START OK sau timeout. PID="+pid
             except Exception as e:
