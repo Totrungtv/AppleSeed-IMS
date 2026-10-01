@@ -393,24 +393,93 @@ class AndroidTool(QMainWindow):
         threading.Thread(target=w,daemon=True).start()
 
     def auto_start_shizuku_after_reconnect(self):
-        """Tự start Shizuku sau khi thiết bị vừa reconnect."""
+        """Sau reboot: chờ Android ổn định, start Shizuku, rồi khôi phục VoLTE."""
         if not self.serial:
             return
         serial=self.serial
+
         def w():
-            try:
-                # Đợi Android/USB/ADB ổn định sau reboot.
-                time.sleep(2.0)
-                if serial != self.serial:
+            last=""
+            for attempt in range(1, 11):
+                try:
+                    time.sleep(2.5 if attempt == 1 else 1.5)
+                    if serial != self.serial:
+                        return
+
+                    # ADB có thể báo 'device' trước khi framework hoàn tất.
+                    rc,dev=self.run(["-s",serial,"shell","getprop","sys.boot_completed"],8)
+                    if rc != 0 or dev.strip() != "1":
+                        self.log(f"🔄 Sau reboot: Android chưa sẵn sàng ({attempt}/10)")
+                        continue
+
+                    ok,msg=self.start_shizuku_via_adb()
+                    last=msg
+
+                    if not ok:
+                        self.log(
+                            f"🔄 Sau reboot: Shizuku chưa chạy ({attempt}/10) — "
+                            + msg.replace("\\n"," | ")
+                        )
+                        continue
+
+                    self.log(
+                        "✅ Sau reboot: Shizuku tự khởi động OK — "
+                        + msg.replace("\\n"," | ")
+                    )
+
+                    # Shizuku là runtime service nên phải khôi phục phần
+                    # FIX_VOLTE sau reboot; chỉ giữ settings flag là chưa đủ
+                    # trên một số ColorOS/Android 8.
+                    try:
+                        installed="package:vn.appleseed.volte" in self.shell(
+                            "pm list packages vn.appleseed.volte",8
+                        )
+                    except Exception:
+                        installed=False
+
+                    if installed:
+                        time.sleep(1.0)
+                        rc2,o2=self.run([
+                            "-s",serial,"shell","am","start",
+                            "-a","vn.appleseed.volte.action.FIX_VOLTE",
+                            "-n","vn.appleseed.volte/.MainActivity"
+                        ],15)
+
+                        if rc2==0:
+                            self.log(
+                                "📡 Sau reboot: đã tự gọi AppleSeed VoLTE FIX_VOLTE."
+                            )
+                        else:
+                            self.log(
+                                "⚠ Sau reboot: Shizuku OK nhưng FIX_VOLTE lỗi "
+                                f"rc={rc2}: {o2}"
+                            )
+
+                    # Xác nhận các flag sau khi Android đã boot.
+                    for key in (
+                        "volte_vt_enabled",
+                        "enhanced_4g_mode_enabled",
+                        "volte_enabled",
+                        "carrier_vt_enabled",
+                    ):
+                        try:
+                            _,v=self.run([
+                                "-s",serial,"shell","settings","get","global",key
+                            ],8)
+                            self.log(f"VERIFY {key}={v.strip() or '—'}")
+                        except Exception:
+                            pass
+
                     return
-                ok,msg=self.start_shizuku_via_adb()
-                if ok:
-                    self.log("🔄 Sau reboot: Shizuku tự khởi động OK — "+msg.replace("\n"," | "))
-                else:
-                    # Không làm phiền khách bằng popup mỗi lần polling.
-                    self.log("🔄 Sau reboot: chưa start được Shizuku — "+msg.replace("\n"," | "))
-            except Exception as e:
-                self.log("🔄 Auto Shizuku ERROR: "+str(e))
+
+                except Exception as e:
+                    last=str(e)
+                    self.log(
+                        f"🔄 Sau reboot: auto restore lỗi ({attempt}/10): {e}"
+                    )
+
+            self.log("❌ Sau reboot: không thể tự khôi phục Shizuku/VoLTE. "+last)
+
         threading.Thread(target=w,daemon=True).start()
 
     def refresh_info(self):
