@@ -20,6 +20,7 @@ import rikka.shizuku.Shizuku
 class BootReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "AppleSeedBoot"
+        private const val ACTION_FIX_VOLTE = "vn.appleseed.volte.action.FIX_VOLTE"
         private val VOLTE_KEYS = listOf(
             "volte_vt_enabled",
             "enhanced_4g_mode_enabled",
@@ -123,7 +124,4 @@ class BootReceiver : BroadcastReceiver() {
             }.getOrDefault(false)
     }
 
-    companion object {
-        private const val ACTION_FIX_VOLTE = "vn.appleseed.volte.action.FIX_VOLTE"
-    }
 }
