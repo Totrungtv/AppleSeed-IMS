@@ -98,11 +98,20 @@ class AndroidTool(QMainWindow):
         self.scrcpy=self.find_scrcpy()
         self.scrcpy_proc=None
         self.serial=""
+        self._last_adb_serial=""
+        self._device_monitor_busy=False
         self.setWindowTitle(f"{APP} • {VER}")
         self.resize(1580,960); self.setMinimumSize(1180,720)
         self.setStyleSheet(self.qss())
         self.build()
         self.refresh_devices()
+
+        # Theo dõi ADB để sau khi điện thoại reboot/reconnect, Apple Seed
+        # tự khởi động lại Shizuku mà không cần bấm nút.
+        self.device_monitor=QTimer(self)
+        self.device_monitor.setInterval(3000)
+        self.device_monitor.timeout.connect(self.monitor_device_connection)
+        self.device_monitor.start()
 
     def qss(self):
         return """
@@ -354,7 +363,55 @@ class AndroidTool(QMainWindow):
         self.status.showMessage(("📱 Đã chọn thiết bị: "+self.serial) if on else "Chưa chọn thiết bị",4000)
         if on:
             self.refresh_info()
+            # Sau khi ADB reconnect (đặc biệt sau reboot), tự start Shizuku.
+            QTimer.singleShot(900, self.auto_start_shizuku_after_reconnect)
             if self.isVisible():QTimer.singleShot(350,self.start_mirror)
+
+    def monitor_device_connection(self):
+        """Tự phát hiện điện thoại vừa online lại sau reboot."""
+        if self._device_monitor_busy or not self.adb:
+            return
+        self._device_monitor_busy=True
+        def w():
+            try:
+                self.run(["start-server"],8)
+                rc,out=self.run(["devices"],8)
+                online=[]
+                for line in out.splitlines()[1:]:
+                    p=line.split()
+                    if len(p)>=2 and p[1] in ("device","unauthorized"):
+                        online.append(p[0])
+                current=self.serial
+                if current and current not in online:
+                    self.post(self.refresh_devices)
+                elif not current and online:
+                    self.post(self.refresh_devices)
+            except Exception as e:
+                self.log("ADB monitor: "+str(e))
+            finally:
+                self._device_monitor_busy=False
+        threading.Thread(target=w,daemon=True).start()
+
+    def auto_start_shizuku_after_reconnect(self):
+        """Tự start Shizuku sau khi thiết bị vừa reconnect."""
+        if not self.serial:
+            return
+        serial=self.serial
+        def w():
+            try:
+                # Đợi Android/USB/ADB ổn định sau reboot.
+                time.sleep(2.0)
+                if serial != self.serial:
+                    return
+                ok,msg=self.start_shizuku_via_adb()
+                if ok:
+                    self.log("🔄 Sau reboot: Shizuku tự khởi động OK — "+msg.replace("\n"," | "))
+                else:
+                    # Không làm phiền khách bằng popup mỗi lần polling.
+                    self.log("🔄 Sau reboot: chưa start được Shizuku — "+msg.replace("\n"," | "))
+            except Exception as e:
+                self.log("🔄 Auto Shizuku ERROR: "+str(e))
+        threading.Thread(target=w,daemon=True).start()
 
     def refresh_info(self):
         def w():
