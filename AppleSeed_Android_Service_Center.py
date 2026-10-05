@@ -445,6 +445,11 @@ class AndroidTool(QMainWindow):
         title.setObjectName("iosCafeTitle"); title.setAlignment(Qt.AlignCenter)
         root.addWidget(title)
 
+        research=QLabel("⚠ ĐANG NGHIÊN CỨU • CHƯA SỬ DỤNG")
+        research.setAlignment(Qt.AlignCenter)
+        research.setStyleSheet("background:#fff3cd;color:#856404;border:1px solid #ffe69c;border-radius:7px;padding:7px;font-weight:800;")
+        root.addWidget(research)
+
         top=QHBoxLayout(); top.setSpacing(8)
         info_card=QFrame(); info_card.setObjectName("iosCafeCard")
         il=QVBoxLayout(info_card); il.setContentsMargins(12,10,12,10); il.setSpacing(8)
