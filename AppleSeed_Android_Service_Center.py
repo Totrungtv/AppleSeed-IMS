@@ -277,8 +277,11 @@ class AndroidTool(QMainWindow):
                 pix = QPixmap(str(path))
                 if pix.isNull():
                     raise RuntimeError("Không đọc được ảnh PNG")
+                # Fit the complete banner inside the card.
+                # Do NOT scale to a height larger than the QLabel: otherwise
+                # the top/bottom of the PNG gets clipped by the widget.
                 label.setPixmap(
-                    pix.scaled(1180, 510, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    pix.scaled(1180, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 )
             except Exception as e:
                 label.setText("APPLE SEED • SERVICE CENTER")
