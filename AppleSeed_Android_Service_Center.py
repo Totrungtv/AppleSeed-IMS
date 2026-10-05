@@ -373,78 +373,174 @@ class AndroidTool(QMainWindow):
         return out
 
     def ios_tab(self):
-        """iOS Service Center — giao diện riêng, rõ ràng và đồng bộ với Apple Seed."""
+        """iOS Service Center — giao diện lấy cảm hứng từ 67CafeRacer, nhưng dùng engine iOS của Apple Seed."""
         w=QWidget()
         w.setObjectName("iosPage")
         w.setStyleSheet("""
-            QWidget#iosPage{background:#080d18}
-            QWidget#iosPage QLabel{background:transparent;color:#e5e7eb}
-            QFrame#iosCard{background:#0d1422;border:1px solid #1e293b;border-radius:14px}
-            QFrame#iosHero{background:#0b1628;border:1px solid #2563eb;border-radius:14px}
-            QLabel#iosTitle{color:#f8fafc;font-size:21pt;font-weight:900}
-            QLabel#iosSub{color:#94a3b8;font-size:9.5pt}
-            QLabel#iosSection{color:#38bdf8;font-size:10pt;font-weight:900}
-            QLabel#iosIcon{color:#f8fafc;font-size:38pt;font-weight:700}
-            QLabel#iosStatus{background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900}
-            QComboBox#iosDevice{background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:9px 10px}
-            QPushButton#iosPrimary{background:#2563eb;color:white;border:1px solid #60a5fa;border-radius:8px;padding:10px 15px;font-weight:800}
-            QPushButton#iosPrimary:hover{background:#1d4ed8}
-            QPushButton#iosSecondary{background:#172033;color:#e5e7eb;border:1px solid #2b3a52;border-radius:8px;padding:10px 15px;font-weight:800}
-            QPushButton#iosSecondary:hover{background:#1d4ed8;border-color:#3b82f6}
-            QPushButton#iosDanger{background:#3b1720;color:#fecaca;border:1px solid #7f1d1d;border-radius:8px;padding:10px 15px;font-weight:800}
-            QLabel#iosHint{color:#64748b;font-size:8.5pt}
-            QTextEdit#iosInfo,QTextEdit#iosLog{background:#050a12;color:#dbeafe;border:1px solid #1e293b;border-radius:9px;font-family:Consolas;font-size:9pt}
+            QWidget#iosPage{background:#f4f4f4}
+            QWidget#iosPage QLabel{background:transparent;color:#111827}
+            QFrame#iosCafeCard{background:#ffffff;border:1px solid #d6d6d6;border-radius:12px}
+            QLabel#iosCafeTitle{color:#111827;font-size:20pt;font-weight:900}
+            QLabel#iosCafeHead{background:#dedede;color:#374151;border-radius:10px;padding:9px 12px;font-size:10.5pt;font-weight:700}
+            QLabel#iosField{color:#111827;font-size:10pt}
+            QLabel#iosValue{color:#374151;font-size:10pt;font-weight:700}
+            QLabel#iosPhone{color:#111827;font-size:68pt}
+            QComboBox#iosCafeCombo{background:#ffffff;color:#111827;border:1px solid #bdbdbd;border-radius:7px;padding:8px}
+            QPushButton#iosCafe{background:#dedede;color:#374151;border:1px solid #d2d2d2;border-radius:8px;padding:9px 12px;font-weight:700}
+            QPushButton#iosCafe:hover{background:#d3d3d3}
+            QPushButton#iosCafeBlue{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4f8cff,stop:1 #ef3da5);color:white;border:0;border-radius:8px;padding:10px 13px;font-weight:800}
+            QPushButton#iosCafeBlue:hover{background:#477ee5}
+            QPushButton#iosCafeDisabled{background:#d6d6d6;color:#a5a5a5;border:1px solid #d0d0d0;border-radius:8px;padding:9px 12px;font-weight:700}
+            QTextEdit#iosCafeLog{background:#ffffff;color:#374151;border:0;border-radius:8px;font-family:Consolas;font-size:9pt}
+            QProgressBar#iosCafeProgress{background:#dedede;border:0;border-radius:7px;height:12px}
+            QProgressBar#iosCafeProgress::chunk{background:#4f8cff;border-radius:7px}
         """)
-        root=QVBoxLayout(w); root.setContentsMargins(14,14,14,14); root.setSpacing(12)
+        root=QVBoxLayout(w); root.setContentsMargins(28,18,28,18); root.setSpacing(12)
 
-        hero=QFrame(); hero.setObjectName("iosHero")
-        hl=QHBoxLayout(hero); hl.setContentsMargins(18,14,18,14); hl.setSpacing(14)
-        icon=QLabel(""); icon.setObjectName("iosIcon"); icon.setAlignment(Qt.AlignCenter); icon.setFixedWidth(62); hl.addWidget(icon)
-        tx=QVBoxLayout(); tx.setSpacing(2)
-        title=QLabel("iOS Service Center"); title.setObjectName("iosTitle"); tx.addWidget(title)
-        sub=QLabel("iPhone / iPad  •  USB  •  Normal  •  Recovery  •  DFU"); sub.setObjectName("iosSub"); tx.addWidget(sub)
-        hl.addLayout(tx); hl.addStretch()
-        self.ios_status=QLabel("iOS: CHƯA KẾT NỐI"); self.ios_status.setObjectName("iosStatus"); hl.addWidget(self.ios_status)
-        root.addWidget(hero)
+        title=QLabel("67CafeRacer Ramdisk A12-13 V2.3  •  Apple Seed iOS Service")
+        title.setObjectName("iosCafeTitle"); title.setAlignment(Qt.AlignCenter)
+        root.addWidget(title)
 
-        row=QHBoxLayout(); row.setSpacing(12)
+        top=QHBoxLayout(); top.setSpacing(8)
+        info_card=QFrame(); info_card.setObjectName("iosCafeCard")
+        il=QVBoxLayout(info_card); il.setContentsMargins(12,10,12,10); il.setSpacing(8)
+        ih=QLabel("Device Information"); ih.setObjectName("iosCafeHead"); il.addWidget(ih)
+        body=QHBoxLayout(); body.setSpacing(16)
 
-        device=QFrame(); device.setObjectName("iosCard")
-        dl=QVBoxLayout(device); dl.setContentsMargins(15,14,15,14); dl.setSpacing(9)
-        sec=QLabel("THIẾT BỊ iOS"); sec.setObjectName("iosSection"); dl.addWidget(sec)
-        self.ios_devices=QComboBox(); self.ios_devices.setObjectName("iosDevice"); self.ios_devices.setMinimumHeight(40); self.ios_devices.setPlaceholderText("Chưa phát hiện iPhone / iPad"); dl.addWidget(self.ios_devices)
-        br=QHBoxLayout(); br.setSpacing(8)
-        b=QPushButton("↻  QUÉT THIẾT BỊ"); b.setObjectName("iosPrimary"); b.clicked.connect(self.refresh_ios_devices); br.addWidget(b)
-        b=QPushButton("ℹ  THÔNG TIN"); b.setObjectName("iosSecondary"); b.clicked.connect(self.ios_device_info); br.addWidget(b)
-        dl.addLayout(br)
-        row.addWidget(device,1)
+        phone=QLabel("▯"); phone.setObjectName("iosPhone"); phone.setAlignment(Qt.AlignCenter); phone.setFixedWidth(110); body.addWidget(phone)
+        fields=QGridLayout(); fields.setHorizontalSpacing(16); fields.setVerticalSpacing(7)
+        self.ios_model=QLabel("-"); self.ios_product=QLabel("-"); self.ios_version=QLabel("-")
+        self.ios_serial=QLabel("-"); self.ios_ecid=QLabel("-"); self.ios_mode=QLabel("-")
+        vals=[self.ios_model,self.ios_product,self.ios_version,self.ios_serial,self.ios_ecid,self.ios_mode]
+        names=["Model:","Product Type:","iOS Version:","Serial Number:","ECID:","Mode:"]
+        for i,(n,v) in enumerate(zip(names,vals)):
+            lab=QLabel(n); lab.setObjectName("iosField")
+            v.setObjectName("iosValue")
+            fields.addWidget(lab,i,0); fields.addWidget(v,i,1)
+        body.addLayout(fields,1)
+        il.addLayout(body)
+        top.addWidget(info_card,3)
 
-        modes=QFrame(); modes.setObjectName("iosCard")
-        ml=QVBoxLayout(modes); ml.setContentsMargins(15,14,15,14); ml.setSpacing(9)
-        sec=QLabel("CHẾ ĐỘ & CÔNG CỤ"); sec.setObjectName("iosSection"); ml.addWidget(sec)
-        r1=QHBoxLayout(); r1.setSpacing(8)
-        for text,tool,args in [("📱 NORMAL","idevice_id",["-l"]),("🔧 RECOVERY / DFU","irecovery",["-q"])]:
-            bb=QPushButton(text); bb.setObjectName("iosSecondary"); bb.clicked.connect(lambda checked=False,t=tool,a=args,n=text:self.ios_probe_mode(n,t,a)); r1.addWidget(bb)
-        ml.addLayout(r1)
-        r2=QHBoxLayout(); r2.setSpacing(8)
-        for text,action in [("💾 BACKUP","backup"),("♻ RESTORE","restore"),("📦 FIRMWARE","firmware")]:
-            bb=QPushButton(text); bb.setObjectName("iosDanger" if action=="restore" else "iosSecondary"); bb.clicked.connect(lambda checked=False,a=action:self.ios_action_info(a)); r2.addWidget(bb)
-        ml.addLayout(r2)
-        hint=QLabel("Restore/Firmware sẽ chỉ chạy khi engine iOS và firmware hợp lệ được cài đặt."); hint.setObjectName("iosHint"); hint.setWordWrap(True); ml.addWidget(hint)
-        row.addWidget(modes,1)
-        root.addLayout(row)
+        log_card=QFrame(); log_card.setObjectName("iosCafeCard")
+        ll=QVBoxLayout(log_card); ll.setContentsMargins(12,10,12,10)
+        lh=QLabel("Log"); lh.setObjectName("iosCafeHead"); ll.addWidget(lh)
+        self.ios_log=QTextEdit(); self.ios_log.setObjectName("iosCafeLog"); self.ios_log.setReadOnly(True); ll.addWidget(self.ios_log,1)
+        top.addWidget(log_card,2)
+        root.addLayout(top,1)
 
-        info=QFrame(); info.setObjectName("iosCard")
-        il=QVBoxLayout(info); il.setContentsMargins(15,14,15,14); il.setSpacing(8)
-        sec=QLabel("THÔNG TIN THIẾT BỊ"); sec.setObjectName("iosSection"); il.addWidget(sec)
-        self.ios_info=QTextEdit(); self.ios_info.setObjectName("iosInfo"); self.ios_info.setReadOnly(True); self.ios_info.setMinimumHeight(145); il.addWidget(self.ios_info)
-        root.addWidget(info)
+        bypass=QFrame(); bypass.setObjectName("iosCafeCard")
+        bl=QVBoxLayout(bypass); bl.setContentsMargins(12,10,12,12); bl.setSpacing(8)
+        bh=QLabel("BYPASS / SERVICE"); bh.setObjectName("iosCafeHead"); bl.addWidget(bh)
 
-        log=QTextEdit(); log.setObjectName("iosLog"); log.setReadOnly(True); log.setMinimumHeight(105); log.setMaximumHeight(135); self.ios_log=log
-        root.addWidget(log,1)
+        row=QHBoxLayout(); row.setSpacing(7)
+        self.ios_devices=QComboBox(); self.ios_devices.setObjectName("iosCafeCombo"); self.ios_devices.setMinimumHeight(43); self.ios_devices.setPlaceholderText("Chưa phát hiện iPhone / iPad")
+        row.addWidget(self.ios_devices,1)
+        b=QPushButton("↻ QUÉT THIẾT BỊ"); b.setObjectName("iosCafe"); b.clicked.connect(self.refresh_ios_devices); row.addWidget(b)
+        b=QPushButton("ℹ DEVICE INFO"); b.setObjectName("iosCafe"); b.clicked.connect(self.ios_device_info); row.addWidget(b)
+        b=QPushButton("NORMAL"); b.setObjectName("iosCafe"); b.clicked.connect(lambda:self.ios_probe_mode("NORMAL","idevice_id",["-l"])); row.addWidget(b)
+        b=QPushButton("RECOVERY / DFU"); b.setObjectName("iosCafe"); b.clicked.connect(lambda:self.ios_probe_mode("RECOVERY / DFU","irecovery",["-q"])); row.addWidget(b)
+        bl.addLayout(row)
+
+        grid=QGridLayout(); grid.setHorizontalSpacing(7); grid.setVerticalSpacing(7)
+        actions=[
+            ("BOOT RAMDISK","ios_ramdisk_info",True),
+            ("Factory Reset","ios_factory_info",False),
+            ("Bypass Hello Screen","ios_bypass_info",False),
+            ("Backup Passcode","ios_passcode_info",False),
+            ("Activate Passcode / Disable","ios_passcode_info",False),
+            ("Read Owner Info","ios_owner_info",False),
+            ("Read Hardware Info","ios_hardware_info",True),
+            ("Hidden account","ios_hidden_info",False),
+        ]
+        for idx,(text,method,enabled) in enumerate(actions):
+            bb=QPushButton(text); bb.setObjectName("iosCafe" if enabled else "iosCafeDisabled")
+            bb.setEnabled(enabled)
+            if enabled:
+                bb.clicked.connect(getattr(self,method))
+            grid.addWidget(bb,idx//3,idx%3)
+        repair=QPushButton("Repair Driver"); repair.setObjectName("iosCafeBlue"); repair.clicked.connect(self.ios_repair_driver)
+        grid.addWidget(repair,3,1)
+        bl.addLayout(grid)
+
+        self.ios_progress=QProgressBar(); self.ios_progress.setObjectName("iosCafeProgress"); self.ios_progress.setRange(0,100); self.ios_progress.setValue(0)
+        bl.addWidget(self.ios_progress)
+        hint=QLabel("Giao diện theo workflow 67CafeRacer. Các thao tác ramdisk/bypass nâng cao chỉ mở khi Apple Seed có engine tương thích và thiết bị phù hợp.")
+        hint.setStyleSheet("color:#6b7280;font-size:8.5pt"); hint.setWordWrap(True); bl.addWidget(hint)
+        root.addWidget(bypass)
+
         QTimer.singleShot(350,self.refresh_ios_devices)
         return w
 
+    def _ios_log(self, text):
+        if hasattr(self, "ios_log"):
+            self.ios_log.append(f"[{time.strftime('%H:%M:%S')}] {text}")
+
+    def _ios_set_field(self, widget, value):
+        try: widget.setText(value if value else "-")
+        except Exception: pass
+
+    def ios_device_info(self):
+        try:
+            udid=self.ios_devices.currentData()
+            args=["-u",str(udid)] if udid else []
+            out=self._ios_run("ideviceinfo",args,timeout=20)
+            data={}
+            for line in out.splitlines():
+                if ":" in line:
+                    k,v=line.split(":",1); data[k.strip()]=v.strip()
+            self._ios_set_field(self.ios_model,data.get("ProductName") or data.get("DeviceClass"))
+            self._ios_set_field(self.ios_product,data.get("ProductType"))
+            self._ios_set_field(self.ios_version,data.get("ProductVersion"))
+            self._ios_set_field(self.ios_serial,data.get("SerialNumber"))
+            self._ios_set_field(self.ios_ecid,data.get("UniqueChipID"))
+            self._ios_set_field(self.ios_mode,"Normal")
+            self._ios_log("Đọc Device Information thành công.")
+        except Exception as e:
+            self._ios_log("❌ DEVICE INFO: "+str(e))
+
+    def ios_ramdisk_info(self):
+        self._ios_log("BOOT RAMDISK: Apple Seed đã nhận engine; cần module ramdisk tương thích trước khi chạy.")
+        self.ios_progress.setValue(10)
+
+    def ios_hardware_info(self):
+        try:
+            out=self._ios_run("ideviceinfo",["-q","com.apple.disk_usage"],timeout=15)
+            self._ios_log("HARDWARE/DEVICE DATA:\\n"+out[:5000])
+        except Exception as e:
+            self._ios_log("❌ HARDWARE INFO: "+str(e))
+
+    def ios_repair_driver(self):
+        tools=[self._find_ios_cli(x) for x in ("idevice_id","ideviceinfo","irecovery")]
+        ok=all(tools)
+        self.ios_progress.setValue(100 if ok else 25)
+        self._ios_log(("✓ iOS engine đủ 3 CLI: idevice_id / ideviceinfo / irecovery" if ok else "⚠ Thiếu một hoặc nhiều CLI trong ios-tools."))
+        if ok:
+            self._ios_log("Driver/engine check: OK.")
+        else:
+            self._ios_log("Đường dẫn kiểm tra: "+str(self.base/"ios-tools"))
+
+    def ios_factory_info(self):
+        self._ios_log("Factory Reset: chưa bật trong Apple Seed để tránh xoá nhầm dữ liệu.")
+
+    def ios_bypass_info(self):
+        self._ios_log("Bypass Hello Screen: module nâng cao chưa được bật. Apple Seed chỉ hiển thị workflow cho tới khi có engine tương thích.")
+
+    def ios_passcode_info(self):
+        self._ios_log("Passcode service: chưa bật thao tác phá/né passcode trong bản hiện tại.")
+
+    def ios_owner_info(self):
+        self._ios_log("Owner Info: chỉ đọc thông tin thiết bị khi engine hỗ trợ và thiết bị đã ghép đôi.")
+
+    def ios_hidden_info(self):
+        self._ios_log("Hidden account: module chưa được bật.")
+
+    def ios_action_info(self, action):
+        labels = {
+            "backup": "Backup iOS sẽ được triển khai bằng engine libimobiledevice/Apple tương thích.",
+            "restore": "Restore có thể xoá dữ liệu và chỉ nên bật sau khi có engine/firmware hợp lệ.",
+            "firmware": "Firmware/iPSW cần engine restore tương thích và kiểm tra thiết bị trước khi chạy."
+        }
+        self._ios_log(labels.get(action,"iOS service action"))
     def _ios_log(self, text):
         if hasattr(self, "ios_log"):
             self.ios_log.append(f"[{time.strftime('%H:%M:%S')}] {text}")
