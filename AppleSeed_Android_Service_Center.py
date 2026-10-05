@@ -625,7 +625,7 @@ class AndroidTool(QMainWindow):
                     f"Đang khôi phục {remote} → máy mới"
                 )
 
-                parent="/sdcard/"+str(Path(name).parent).replace("\","/")
+                parent="/sdcard/"+str(Path(name).parent).replace("\\","/")
                 if parent in ("/sdcard","."):
                     parent="/sdcard"
                 self.run(["-s",dst,"shell","mkdir","-p",parent],30)
