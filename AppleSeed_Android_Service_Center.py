@@ -213,6 +213,7 @@ class AndroidTool(QMainWindow):
         self.tabs=QTabWidget(); main.addWidget(self.tabs,1)
         self.tabs.addTab(self.home_tab(),"⌂  TỔNG QUAN")
         self.tabs.addTab(self.transfer_tab(),"⇄  CHUYỂN DỮ LIỆU")
+        self.tabs.addTab(self.ios_tab(),"  iOS SERVICE")
         self.tabs.addTab(self.volte_tab(),"☎  VoLTE / IMS")
         self.tabs.addTab(self.device_tab(),"▣  THIẾT BỊ")
         self.tabs.addTab(self.diag_tab(),"⌁  CHẨN ĐOÁN")
@@ -335,6 +336,227 @@ class AndroidTool(QMainWindow):
             return label
 
         return AnimatedHero(pix)
+
+    def _find_ios_cli(self, name):
+        """Tìm bộ công cụ libimobiledevice/irecovery cạnh Apple Seed hoặc trong PATH."""
+        candidates = [
+            self.base / "ios-tools" / (name + (".exe" if os.name == "nt" else "")),
+            self.base / "tools" / "ios" / (name + (".exe" if os.name == "nt" else "")),
+        ]
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
+        for p in candidates:
+            if p.exists():
+                return str(p)
+        return None
+
+    def _ios_run(self, tool, args=None, timeout=20):
+        path = self._find_ios_cli(tool)
+        if not path:
+            raise RuntimeError(
+                f"Chưa có {tool}.exe. Đặt bộ libimobiledevice/irecovery vào thư mục "
+                f"ios-tools cạnh Apple Seed hoặc cài để {tool} có trong PATH."
+            )
+        p = subprocess.run(
+            [path] + list(args or []),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+        )
+        out = ((p.stdout or "") + (p.stderr or "")).strip()
+        if p.returncode:
+            raise RuntimeError(out or f"{tool} trả mã {p.returncode}")
+        return out
+
+    def ios_tab(self):
+        """Trang iOS riêng: quản lý iPhone/iPad, độc lập với các tab Android."""
+        w = QWidget()
+        w.setObjectName("iosPage")
+        w.setStyleSheet("""
+            QWidget#iosPage{background:#eef5ff}
+            QFrame#iosCard{background:#ffffff;border:1px solid #d5e5f5;border-radius:15px}
+            QFrame#iosHero{background:#071a2f;border:1px solid #2563eb;border-radius:16px}
+            QLabel#iosTitle{color:#12345a;font-size:23pt;font-weight:900}
+            QLabel#iosSub{color:#64748b;font-size:10pt}
+            QLabel#iosSection{color:#17365d;font-size:11pt;font-weight:900}
+            QLabel#iosIcon{color:#f8fafc;font-size:46pt;font-weight:700}
+            QLabel#iosStatus{color:#16a34a;font-weight:900}
+            QPushButton#iosPrimary{background:#2563eb;color:white;border:0;border-radius:10px;padding:11px 18px;font-weight:900}
+            QPushButton#iosSecondary{background:#ffffff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:10px 15px;font-weight:800}
+            QPushButton#iosDanger{background:#fff1f2;color:#be123c;border:1px solid #fecdd3;border-radius:9px;padding:10px 15px;font-weight:800}
+            QTextEdit#iosLog{background:#ffffff;color:#334155;border:1px solid #d5e5f5;border-radius:10px;font-family:Consolas;font-size:9pt}
+        """)
+        root = QVBoxLayout(w)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        hero = QFrame()
+        hero.setObjectName("iosHero")
+        hl = QHBoxLayout(hero)
+        hl.setContentsMargins(20, 16, 20, 16)
+        icon = QLabel("")
+        icon.setObjectName("iosIcon")
+        icon.setAlignment(Qt.AlignCenter)
+        icon.setFixedWidth(75)
+        hl.addWidget(icon)
+        tx = QVBoxLayout()
+        title = QLabel("iOS Service Center")
+        title.setObjectName("iosTitle")
+        title.setStyleSheet("color:#f8fafc;font-size:22pt;font-weight:900")
+        tx.addWidget(title)
+        sub = QLabel("Apple iPhone / iPad • USB • Normal • Recovery • DFU")
+        sub.setObjectName("iosSub")
+        sub.setStyleSheet("color:#bfdbfe;font-size:10pt")
+        tx.addWidget(sub)
+        hl.addLayout(tx)
+        hl.addStretch()
+        status = QLabel("iOS: CHƯA KẾT NỐI")
+        status.setObjectName("iosStatus")
+        status.setStyleSheet("background:#1e293b;color:#94a3b8;border-radius:9px;padding:9px 14px;font-weight:900")
+        self.ios_status = status
+        hl.addWidget(status)
+        root.addWidget(hero)
+
+        row = QHBoxLayout()
+        row.setSpacing(12)
+
+        device = QFrame()
+        device.setObjectName("iosCard")
+        dl = QVBoxLayout(device)
+        dl.setContentsMargins(16, 16, 16, 16)
+        dl.addWidget(QLabel("THIẾT BỊ iOS", objectName="iosSection"))
+        self.ios_devices = QComboBox()
+        self.ios_devices.setMinimumHeight(40)
+        self.ios_devices.setPlaceholderText("Chưa phát hiện iPhone / iPad")
+        dl.addWidget(self.ios_devices)
+        br = QHBoxLayout()
+        b = QPushButton("↻  QUÉT iOS")
+        b.setObjectName("iosPrimary")
+        b.clicked.connect(self.refresh_ios_devices)
+        br.addWidget(b)
+        b = QPushButton("ℹ  THÔNG TIN")
+        b.setObjectName("iosSecondary")
+        b.clicked.connect(self.ios_device_info)
+        br.addWidget(b)
+        dl.addLayout(br)
+        row.addWidget(device, 1)
+
+        modes = QFrame()
+        modes.setObjectName("iosCard")
+        ml = QVBoxLayout(modes)
+        ml.setContentsMargins(16, 16, 16, 16)
+        ml.addWidget(QLabel("CHẾ ĐỘ & CÔNG CỤ", objectName="iosSection"))
+        r1 = QHBoxLayout()
+        for text, tool, args in [
+            ("Normal", "idevice_id", ["-l"]),
+            ("Recovery / DFU", "irecovery", ["-q"]),
+        ]:
+            bb = QPushButton(text)
+            bb.setObjectName("iosSecondary")
+            bb.clicked.connect(lambda checked=False, t=tool, a=args, n=text: self.ios_probe_mode(n, t, a))
+            r1.addWidget(bb)
+        ml.addLayout(r1)
+        r2 = QHBoxLayout()
+        for text, action in [
+            ("Backup", "backup"),
+            ("Restore", "restore"),
+            ("Firmware", "firmware"),
+        ]:
+            bb = QPushButton(text)
+            bb.setObjectName("iosDanger" if action == "restore" else "iosSecondary")
+            bb.clicked.connect(lambda checked=False, a=action: self.ios_action_info(a))
+            r2.addWidget(bb)
+        ml.addLayout(r2)
+        note = QLabel(
+            "Các thao tác Restore/Firmware chưa tự chạy. Apple Seed chỉ bật engine khi "
+            "đã có bộ công cụ iOS tương thích."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#64748b;font-size:8.5pt")
+        ml.addWidget(note)
+        row.addWidget(modes, 1)
+
+        root.addLayout(row)
+
+        info = QFrame()
+        info.setObjectName("iosCard")
+        il = QVBoxLayout(info)
+        il.setContentsMargins(16, 14, 16, 14)
+        il.addWidget(QLabel("iOS DEVICE INFO", objectName="iosSection"))
+        self.ios_info = QTextEdit()
+        self.ios_info.setReadOnly(True)
+        self.ios_info.setMinimumHeight(150)
+        il.addWidget(self.ios_info)
+        root.addWidget(info)
+
+        log = QTextEdit()
+        log.setObjectName("iosLog")
+        log.setReadOnly(True)
+        log.setMinimumHeight(120)
+        self.ios_log = log
+        root.addWidget(log, 1)
+
+        QTimer.singleShot(350, self.refresh_ios_devices)
+        return w
+
+    def _ios_log(self, text):
+        if hasattr(self, "ios_log"):
+            self.ios_log.append(f"[{time.strftime('%H:%M:%S')}] {text}")
+
+    def refresh_ios_devices(self):
+        if not hasattr(self, "ios_devices"):
+            return
+        self.ios_devices.clear()
+        try:
+            out = self._ios_run("idevice_id", ["-l"], timeout=10)
+            ids = [x.strip() for x in out.splitlines() if x.strip()]
+            if ids:
+                for udid in ids:
+                    self.ios_devices.addItem(udid, udid)
+                self.ios_status.setText(f"iOS: {len(ids)} THIẾT BỊ")
+                self.ios_status.setStyleSheet("background:#064e3b;color:#bbf7d0;border-radius:9px;padding:9px 14px;font-weight:900")
+                self._ios_log("Đã phát hiện: " + ", ".join(ids))
+            else:
+                self.ios_status.setText("iOS: CHƯA KẾT NỐI")
+                self.ios_status.setStyleSheet("background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900")
+                self._ios_log("Không thấy iPhone/iPad ở chế độ Normal.")
+        except Exception as e:
+            self.ios_status.setText("iOS: THIẾU ENGINE")
+            self.ios_status.setStyleSheet("background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900")
+            self._ios_log("⚠ " + str(e))
+
+    def ios_device_info(self):
+        try:
+            udid = self.ios_devices.currentData()
+            args = ["-u", str(udid)] if udid else []
+            out = self._ios_run("ideviceinfo", args, timeout=20)
+            self.ios_info.setPlainText(out or "Không có thông tin.")
+            self._ios_log("Đọc thông tin iOS thành công.")
+        except Exception as e:
+            self.ios_info.setPlainText("Không đọc được thông tin iOS.\n\n" + str(e))
+            self._ios_log("❌ " + str(e))
+
+    def ios_probe_mode(self, mode, tool, args):
+        try:
+            out = self._ios_run(tool, args, timeout=15)
+            self.ios_info.setPlainText(f"===== {mode.upper()} =====\n\n{out or '(không có dữ liệu)'}")
+            self._ios_log(f"{mode}: OK")
+        except Exception as e:
+            self.ios_info.setPlainText(f"===== {mode.upper()} =====\n\n" + str(e))
+            self._ios_log(f"{mode}: {e}")
+
+    def ios_action_info(self, action):
+        labels = {
+            "backup": "Backup iOS sẽ được triển khai bằng engine libimobiledevice/Apple tương thích.",
+            "restore": "Restore có thể xoá dữ liệu và chỉ nên bật sau khi có engine/firmware hợp lệ.",
+            "firmware": "Firmware/iPSW cần engine restore tương thích và kiểm tra thiết bị trước khi chạy."
+        }
+        self.ios_info.setPlainText("===== iOS SERVICE =====\n\n" + labels[action])
+        self._ios_log(labels[action])
 
     def transfer_tab(self):
         """Phone Transfer Center — giao diện sáng, rõ ràng, lấy cảm hứng từ workflow MobileTrans."""
