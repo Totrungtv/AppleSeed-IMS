@@ -272,21 +272,19 @@ class AndroidTool(QMainWindow):
         label.setMaximumHeight(320)
         label.setScaledContents(False)
         label.setStyleSheet("background:#050a12;border:1px solid #1e293b;border-radius:14px;")
-        path = self.base / "assets" / "c266ea01-9dca-4b83-8985-a1435ad15d97.png"
+        path = self.base / "assets" / "ChatGPT Image 23_07_17 5 thg 10, 2026.png"
         if path.exists():
             try:
                 pix = QPixmap(str(path))
                 if pix.isNull():
                     raise RuntimeError("Không đọc được ảnh PNG")
-                # Full-width dashboard banner: fill the entire card so there
-                # is no empty space on either side.  IgnoreAspectRatio is
-                # intentional because the uploaded artwork is a portrait-ish
-                # composition while the dashboard banner is ultra-wide.
+                # Panoramic artwork: preserve the original aspect ratio and
+                # fit the complete image inside the dashboard banner.
                 label.setPixmap(
                     pix.scaled(
                         max(1, label.width() - 2),
                         max(1, label.height() - 2),
-                        Qt.IgnoreAspectRatio,
+                        Qt.KeepAspectRatio,
                         Qt.SmoothTransformation
                     )
                 )
