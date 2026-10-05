@@ -321,7 +321,12 @@ class AndroidTool(QMainWindow):
 
     def device_tab(self):
         w=QWidget(); l=QVBoxLayout(w); self.device_out=QTextEdit(); self.device_out.setReadOnly(True); l.addWidget(self.device_out,1)
-        r=QHBoxLayout(); self.button(r,"🔍 PHÂN TÍCH",self.analyze,"primary"); self.button(r,"SAO LƯU",self.backup); self.button(r,"XUẤT TXT",self.export_report); l.addLayout(r); return w
+        r=QHBoxLayout()
+        self.button(r,"🔍 PHÂN TÍCH",self.analyze,"primary")
+        self.button(r,"💾 BACKUP",self.backup,"green")
+        self.button(r,"♻ RESTORE",self.restore_backup,"red")
+        self.button(r,"XUẤT TXT",self.export_report)
+        l.addLayout(r); return w
 
     def diag_tab(self):
         w=QWidget(); l=QVBoxLayout(w); g=QGridLayout()
@@ -815,11 +820,111 @@ class AndroidTool(QMainWindow):
         self.threaded(w)
 
     def backup(self):
-        if not self.require():return
-        folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}";folder.mkdir(parents=True,exist_ok=True)
+        """Backup các dữ liệu chẩn đoán + thiết lập VoLTE có thể đọc/ghi qua ADB.
+        Không root, không sao lưu phân vùng hệ thống/IMEI/NVRAM.
+        """
+        if not self.require(): return
+        folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}"
+        folder.mkdir(parents=True,exist_ok=True)
+
         def w():
-            try:(folder/"getprop.txt").write_text(self.shell("getprop",20),encoding="utf-8");self.log("Backup: "+str(folder))
-            except Exception as e:self.log("Backup lỗi: "+str(e))
+            try:
+                self._volte_progress(10,"Tạo thư mục backup")
+                commands={
+                    "getprop.txt":"getprop",
+                    "settings_global.txt":"settings list global",
+                    "packages.txt":"pm list packages -f",
+                    "carrier_config.txt":"dumpsys carrier_config",
+                    "ims.txt":"dumpsys ims",
+                    "battery.txt":"dumpsys battery",
+                    "telephony.txt":"dumpsys telephony.registry",
+                    "network.txt":"getprop | grep -iE 'gsm|radio|baseband|operator|network'",
+                }
+                for i,(name,cmd) in enumerate(commands.items(),start=1):
+                    try:
+                        data=self.shell(cmd,30)
+                        (folder/name).write_text(data or "",encoding="utf-8")
+                    except Exception as e:
+                        (folder/name).write_text("ERROR: "+str(e),encoding="utf-8")
+                    self._volte_progress(min(85,10+i*9), "Backup "+name)
+
+                # Lưu riêng các flag Apple Seed thường dùng để restore nhanh.
+                keys=("volte_vt_enabled","enhanced_4g_mode_enabled","volte_enabled","carrier_vt_enabled")
+                lines=[]
+                for key in keys:
+                    try:
+                        value=self.shell("settings get global "+key,8).strip()
+                    except Exception as e:
+                        value="ERROR:"+str(e)
+                    lines.append(key+"="+value)
+                (folder/"appleseed_volte_settings.txt").write_text("\n".join(lines)+"\n",encoding="utf-8")
+
+                meta=[
+                    "Apple Seed Android Service Center",
+                    "Backup time: "+time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "Serial: "+self.serial,
+                    "NOTE: ADB backup only; system partitions/NVRAM/IMEI are not included."
+                ]
+                (folder/"BACKUP_INFO.txt").write_text("\n".join(meta)+"\n",encoding="utf-8")
+                self._volte_progress(100,"Backup hoàn tất")
+                self.log("✅ Backup: "+str(folder))
+                self.post(lambda f=str(folder): QMessageBox.information(
+                    self,"Apple Seed — Backup","Đã backup thành công.\n\n"+f
+                ))
+            except Exception as e:
+                self.log("❌ Backup lỗi: "+str(e))
+                self.post(lambda e=str(e): QMessageBox.warning(self,"Backup lỗi",e))
+        self.threaded(w)
+
+    def restore_backup(self):
+        """Restore các VoLTE/global flags đã backup bằng ADB."""
+        if not self.require(): return
+        folder=QFileDialog.getExistingDirectory(self,"Chọn thư mục BACKUP",str(self.base/"backups"))
+        if not folder: return
+        settings_file=Path(folder)/"appleseed_volte_settings.txt"
+        if not settings_file.exists():
+            QMessageBox.warning(self,"Restore","Không tìm thấy appleseed_volte_settings.txt trong backup.")
+            return
+        if not self.ask(
+            "XÁC NHẬN RESTORE",
+            "Restore các thiết lập VoLTE Apple Seed từ backup này?\n\n"
+            "Chỉ khôi phục các global flags đã được Apple Seed backup. "
+            "Không đụng IMEI/NVRAM/phân vùng hệ thống."
+        ):
+            return
+
+        def w():
+            try:
+                allowed={"volte_vt_enabled","enhanced_4g_mode_enabled","volte_enabled","carrier_vt_enabled"}
+                restored=[]; skipped=[]
+                for line in settings_file.read_text(encoding="utf-8",errors="replace").splitlines():
+                    if "=" not in line: continue
+                    key,value=line.split("=",1)
+                    key=key.strip(); value=value.strip()
+                    if key not in allowed or value not in ("0","1"):
+                        skipped.append(line); continue
+                    rc,out=self.run(["-s",self.serial,"shell","settings","put","global",key,value],10)
+                    restored.append(f"{key}={value} | rc={rc} | {out.strip()}")
+                self._volte_progress(75,"Xác minh sau restore")
+                verify=[]
+                for key in allowed:
+                    try:
+                        verify.append(key+"="+self.shell("settings get global "+key,8).strip())
+                    except Exception as e:
+                        verify.append(key+"=ERROR:"+str(e))
+                report="===== APPLE SEED RESTORE =====\n\n"+"\n".join(restored)
+                report+="\n\n===== VERIFY =====\n"+"\n".join(verify)
+                if skipped: report+="\n\n===== SKIPPED =====\n"+"\n".join(skipped)
+                self._volte_progress(100,"Restore hoàn tất")
+                self.showout(self.device_out,"RESTORE BACKUP",report)
+                self.log("✅ Restore backup hoàn tất.")
+                self.post(lambda:QMessageBox.information(
+                    self,"Apple Seed — Restore","Đã khôi phục các VoLTE flags từ backup.\n\n"
+                    "Nếu ROM yêu cầu, hãy kiểm tra lại VoLTE/IMS hoặc reboot."
+                ))
+            except Exception as e:
+                self.log("❌ Restore lỗi: "+str(e))
+                self.post(lambda e=str(e): QMessageBox.warning(self,"Restore lỗi",e))
         self.threaded(w)
 
     def export_report(self):
