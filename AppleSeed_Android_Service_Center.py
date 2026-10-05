@@ -265,28 +265,26 @@ class AndroidTool(QMainWindow):
     def showout(self,w,title,text): self.post(lambda:(w.setPlainText(f"===== {title} =====\n\n{text}"),w.moveCursor(w.textCursor().End)))
 
     def robot_banner(self):
-        """Hiển thị robot Apple Seed tương lai từ assets/apple_seed_robot.svg."""
+        """Hiển thị ảnh robot/banner PNG mới trong assets."""
         label = QLabel()
         label.setAlignment(Qt.AlignCenter)
         label.setMinimumHeight(250)
         label.setMaximumHeight(320)
         label.setStyleSheet("background:#050a12;border:1px solid #1e293b;border-radius:14px;")
-        path = self.base / "assets" / "apple_seed_robot.svg"
+        path = self.base / "assets" / "c266ea01-9dca-4b83-8985-a1435ad15d97.png"
         if path.exists():
             try:
-                renderer = QSvgRenderer(str(path))
-                image = QImage(1200, 520, QImage.Format_ARGB32)
-                image.fill(Qt.transparent)
-                painter = QPainter(image)
-                renderer.render(painter)
-                painter.end()
-                pix = QPixmap.fromImage(image)
-                label.setPixmap(pix.scaled(1180, 510, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                pix = QPixmap(str(path))
+                if pix.isNull():
+                    raise RuntimeError("Không đọc được ảnh PNG")
+                label.setPixmap(
+                    pix.scaled(1180, 510, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                )
             except Exception as e:
-                label.setText("APPLE SEED • FUTURE SERVICE ROBOT")
-                self.log("Robot banner error: " + str(e))
+                label.setText("APPLE SEED • SERVICE CENTER")
+                self.log("Robot/banner PNG error: " + str(e))
         else:
-            label.setText("APPLE SEED • FUTURE SERVICE ROBOT")
+            label.setText("APPLE SEED • SERVICE CENTER")
         return label
 
     def transfer_tab(self):
