@@ -564,8 +564,57 @@ class AndroidTool(QMainWindow):
             self.ios_progress.setValue(25)
 
     def ios_ramdisk_info(self):
-        self._ios_log("BOOT RAMDISK: Apple Seed đã nhận engine; cần module ramdisk tương thích trước khi chạy.")
-        self.ios_progress.setValue(10)
+        """RAMDISK pre-flight: kiểm tra DFU/Recovery và bộ iOS engine."""
+        self.ios_progress.setValue(5)
+        self._ios_log("===== APPLE SEED RAMDISK PRE-FLIGHT =====")
+        self._ios_log("Đang kiểm tra Normal / Recovery / DFU...")
+
+        def worker():
+            try:
+                result = self.ios_engine.probe()
+                mode = result.get("mode", "Not detected")
+                details = result.get("details", "")
+                self.post(lambda m=mode: self._ios_set_field(self.ios_mode, m))
+
+                if mode == "Normal":
+                    self._ios_log("⚠ Thiết bị đang ở NORMAL.")
+                    self._ios_log("Hãy đưa iPhone/iPad vào Recovery hoặc DFU trước khi chuẩn bị boot.")
+                    self.post(lambda: self.ios_progress.setValue(20))
+                    return
+
+                if mode not in ("Recovery", "DFU"):
+                    self._ios_log("❌ Không phát hiện thiết bị Recovery/DFU.")
+                    self._ios_log("Kiểm tra cáp USB, Apple Mobile Device/usbmuxd và chế độ DFU.")
+                    self.post(lambda: self.ios_progress.setValue(10))
+                    return
+
+                self._ios_log("✓ Phát hiện chế độ: " + mode)
+                self.post(lambda: self.ios_progress.setValue(35))
+
+                required = []
+                for name in ("irecovery", "idevice_id", "ideviceinfo"):
+                    path = self.ios_engine.find_cli(name)
+                    required.append((name, path))
+                    self._ios_log(("✓ " if path else "❌ ") + name + (": " + str(path) if path else ": thiếu"))
+
+                if not all(path for _, path in required):
+                    self._ios_log("❌ Bộ iOS engine chưa đủ CLI.")
+                    self.post(lambda: self.ios_progress.setValue(25))
+                    return
+
+                self.post(lambda: self.ios_progress.setValue(60))
+                self._ios_log("✓ iOS communication engine: OK")
+                self._ios_log("✓ DFU/Recovery communication: OK")
+                self._ios_log("✓ Có thể tiếp tục bước kiểm tra firmware/boot assets.")
+                self._ios_log("ℹ Bản hiện tại chưa gửi boot payload/ramdisk tự động.")
+                if details:
+                    self._ios_log(details[:2500])
+                self.post(lambda: self.ios_progress.setValue(100))
+            except Exception as e:
+                self._ios_log("❌ RAMDISK PRE-FLIGHT: " + str(e))
+                self.post(lambda: self.ios_progress.setValue(10))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def ios_hardware_info(self):
         try:
