@@ -337,147 +337,134 @@ class AndroidTool(QMainWindow):
         return AnimatedHero(pix)
 
     def transfer_tab(self):
-        """Phone Transfer Center — UI lấy cảm hứng từ MobileTrans nhưng dùng engine ADB của Apple Seed."""
+        """Phone Transfer Center — giao diện sáng, rõ ràng, lấy cảm hứng từ workflow MobileTrans."""
         w=QWidget()
         w.setObjectName("transferPage")
         w.setStyleSheet("""
-            QWidget#transferPage{background:#eef6ff;border-radius:14px}
-            QFrame#transferSide{background:#f8fbff;border:1px solid #dbeafe;border-radius:14px}
-            QFrame#transferPanel{background:#ffffff;border:1px solid #dbeafe;border-radius:16px}
-            QLabel#transferTitle{color:#0f2747;font-size:22pt;font-weight:800}
-            QLabel#transferSub{color:#64748b;font-size:10pt}
-            QLabel#transferSection{color:#17365d;font-weight:800;font-size:11pt}
-            QLabel#transferMuted{color:#64748b}
-            QLabel#phoneName{color:#17365d;font-size:11pt;font-weight:800}
-            QLabel#phoneHint{color:#64748b;font-size:9pt}
-            QComboBox#transferDevice{background:#f8fbff;border:1px solid #cbd5e1;border-radius:9px;padding:9px;color:#17365d}
-            QCheckBox{color:#334155;font-size:10pt;padding:5px}
-            QCheckBox::indicator{width:19px;height:19px}
-            QPushButton#transferNav{background:transparent;color:#64748b;border:0;text-align:left;padding:10px 12px;border-radius:9px;font-weight:700}
-            QPushButton#transferNav:hover{background:#e0edff;color:#2563eb}
-            QPushButton#transferNavActive{background:#dbeafe;color:#2563eb;border:0;text-align:left;padding:10px 12px;border-radius:9px;font-weight:800}
-            QPushButton#transferScan{background:#e8f2ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:9px 14px;font-weight:800}
-            QPushButton#transferScan:hover{background:#dbeafe}
-            QPushButton#transferStart{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #06b6d4,stop:.55 #2563eb,stop:1 #d946ef);color:white;border:0;border-radius:11px;padding:13px 26px;font-size:12pt;font-weight:900}
-            QPushButton#transferStart:hover{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0891b2,stop:.55 #1d4ed8,stop:1 #c026d3)}
-            QPushButton#transferSecondary{background:#ffffff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:9px 14px;font-weight:800}
-            QFrame#phoneCard{background:#f3f8ff;border:1px solid #dbeafe;border-radius:16px}
-            QFrame#phoneVisual{background:#07182c;border:3px solid #93c5fd;border-radius:25px}
-            QLabel#phoneGlyph{color:#60a5fa;font-size:42pt}
-            QFrame#dataPanel{background:#ffffff;border:1px solid #dbeafe;border-radius:16px}
-            QLabel#dataInfo{color:#64748b;font-size:9pt}
+            QWidget#transferPage{background:#eef5ff}
+            QLabel{background:transparent;color:#17365d}
+            QFrame#transferSide{background:#f8fbff;border:1px solid #d8e7f7;border-radius:14px}
+            QFrame#transferMain{background:#eef5ff;border:0}
+            QFrame#transferPhones{background:#ffffff;border:1px solid #d5e5f5;border-radius:15px}
+            QFrame#phoneCard{background:#f7fbff;border:1px solid #d9e8f7;border-radius:13px}
+            QFrame#phoneVisual{background:#071a2f;border:3px solid #8cc7ff;border-radius:24px}
+            QFrame#dataPanel{background:#ffffff;border:1px solid #d5e5f5;border-radius:15px}
+            QLabel#title{color:#12345a;font-size:22pt;font-weight:900}
+            QLabel#sub{color:#64748b;font-size:10pt}
+            QLabel#section{color:#17365d;font-size:11pt;font-weight:900}
+            QLabel#phoneTitle{color:#17365d;font-size:10pt;font-weight:900}
+            QLabel#phoneHint{color:#94a3b8;font-size:9pt}
+            QLabel#phoneIcon{color:#60a5fa;font-size:38pt}
+            QLabel#safe{color:#16a34a;font-weight:800}
+            QLabel#ai{color:#8b5cf6;font-weight:800}
+            QLabel#info{color:#64748b;font-size:8.5pt}
+            QPushButton#side{background:transparent;color:#64748b;border:0;text-align:left;padding:9px 11px;border-radius:8px;font-weight:700}
+            QPushButton#side:hover{background:#e5efff;color:#2563eb}
+            QPushButton#sideActive{background:#dbeafe;color:#2563eb;border:0;text-align:left;padding:10px 11px;border-radius:8px;font-weight:900}
+            QPushButton#scan{background:#ffffff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:9px 14px;font-weight:800}
+            QPushButton#scan:hover{background:#eff6ff}
+            QPushButton#secondary{background:#ffffff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:9px 14px;font-weight:800}
+            QPushButton#secondary:hover{background:#eff6ff}
+            QPushButton#start{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #06b6d4,stop:.55 #2563eb,stop:1 #d946ef);color:#ffffff;border:0;border-radius:11px;padding:13px 30px;font-size:12pt;font-weight:900}
+            QComboBox#device{background:#ffffff;color:#17365d;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px}
+            QCheckBox{background:transparent;color:#334155;padding:6px 2px;font-weight:600}
+            QCheckBox::indicator{width:18px;height:18px}
+            QTextEdit#transferLog{background:#ffffff;color:#334155;border:1px solid #d5e5f5;border-radius:10px;font-family:Consolas;font-size:9pt}
         """)
+
         root=QHBoxLayout(w); root.setContentsMargins(14,14,14,14); root.setSpacing(12)
 
-        # Sidebar — bố cục gần MobileTrans nhưng giữ phong cách Apple Seed.
+        # Sidebar
         side=QFrame(); side.setObjectName("transferSide"); side.setFixedWidth(205)
-        sl=QVBoxLayout(side); sl.setContentsMargins(14,16,14,14); sl.setSpacing(5)
-        brand=QLabel("🍎 Apple Seed")
-        brand.setStyleSheet("color:#102a43;font-size:15pt;font-weight:900")
-        sl.addWidget(brand)
-        ai=QLabel("ANDROID TRANSFER")
-        ai.setStyleSheet("color:#8b5cf6;font-weight:900;font-size:8pt")
-        sl.addWidget(ai); sl.addSpacing(10)
-        sec=QLabel("App Transfer"); sec.setObjectName("transferSection"); sl.addWidget(sec)
-        for txt in ("▣  WhatsApp","▣  Zalo","▣  LINE","▦  Ứng dụng khác"):
-            b=QPushButton(txt); b.setObjectName("transferNav"); b.setEnabled(False); sl.addWidget(b)
-        sec2=QLabel("Phone Transfer"); sec2.setObjectName("transferSection"); sl.addSpacing(12); sl.addWidget(sec2)
-        b=QPushButton("📱  Phone to Phone"); b.setObjectName("transferNavActive"); sl.addWidget(b)
-        for txt in ("💻  Phone to PC","📦  App to App","▦  Home Screen"):
-            b=QPushButton(txt); b.setObjectName("transferNav"); b.setEnabled(False); sl.addWidget(b)
-        sec3=QLabel("Backup & Restore"); sec3.setObjectName("transferSection"); sl.addSpacing(12); sl.addWidget(sec3)
-        for txt in ("💾  Backup Android","♻  Restore Android"):
-            b=QPushButton(txt); b.setObjectName("transferNav"); b.setEnabled(False); sl.addWidget(b)
+        sl=QVBoxLayout(side); sl.setContentsMargins(14,16,14,14); sl.setSpacing(3)
+        brand=QLabel("● Apple Seed"); brand.setStyleSheet("color:#17365d;font-size:15pt;font-weight:900"); sl.addWidget(brand)
+        tag=QLabel("ANDROID TRANSFER"); tag.setStyleSheet("color:#8b5cf6;font-size:8pt;font-weight:900"); sl.addWidget(tag); sl.addSpacing(8)
+        for heading,items,active in [
+            ("App Transfer",["▣  WhatsApp","▣  Zalo","▣  LINE","▦  Ứng dụng khác"],-1),
+            ("Phone Transfer",["▣  Phone to Phone","▣  Phone to PC","▦  App to App","▦  Home Screen"],0),
+            ("Backup & Restore",["▣  Backup Android","♻  Restore Android"],-1)
+        ]:
+            h=QLabel(heading); h.setStyleSheet("color:#17365d;font-weight:900;margin-top:7px"); sl.addWidget(h)
+            for i,txt in enumerate(items):
+                b=QPushButton(txt); b.setObjectName("sideActive" if i==active else "side")
+                if i!=active: b.setEnabled(False)
+                sl.addWidget(b)
         sl.addStretch()
-        tip=QLabel("Apple Seed Transfer\nADB • USB • PC staging")
-        tip.setStyleSheet("background:#eef6ff;color:#64748b;border-radius:10px;padding:10px;font-size:8pt")
+        tip=QLabel("Apple Seed Transfer\nUSB • ADB • PC staging")
+        tip.setStyleSheet("background:#edf5ff;color:#64748b;border-radius:9px;padding:10px;font-size:8pt")
         sl.addWidget(tip)
         root.addWidget(side)
 
-        body=QVBoxLayout(); body.setSpacing(10)
+        main=QVBoxLayout(); main.setSpacing(9)
         top=QHBoxLayout()
-        title=QLabel("Phone Transfer"); title.setObjectName("transferTitle"); top.addWidget(title)
-        top.addStretch()
-        scan=QPushButton("↻  Scan devices"); scan.setObjectName("transferScan"); scan.clicked.connect(self.refresh_transfer_devices); top.addWidget(scan)
-        body.addLayout(top)
-        sub=QLabel("Transfer photos, videos, music and documents from your old Android to your new Android.")
-        sub.setObjectName("transferSub"); body.addWidget(sub)
+        title=QLabel("Phone Transfer"); title.setObjectName("title"); top.addWidget(title); top.addStretch()
+        scan=QPushButton("↻  Scan devices"); scan.setObjectName("scan"); scan.clicked.connect(self.refresh_transfer_devices); top.addWidget(scan)
+        main.addLayout(top)
+        sub=QLabel("Transfer photos, videos, music and documents from your old Android to your new Android."); sub.setObjectName("sub"); main.addWidget(sub)
 
-        # Thanh tab mô phỏng Transfer / Transfer & Merge / Backup.
-        modes=QHBoxLayout(); modes.setSpacing(4)
-        for i,txt in enumerate(("Transfer","Transfer & Merge","Backup / Restore")):
-            b=QPushButton(txt)
-            b.setObjectName("transferNavActive" if i==0 else "transferNav")
-            if i>0:b.setEnabled(False)
-            modes.addWidget(b)
-        modes.addStretch(); body.addLayout(modes)
+        tabs=QHBoxLayout(); tabs.setSpacing(2)
+        for i,txt in enumerate(["Transfer","Transfer & Merge","Backup / Restore"]):
+            b=QPushButton(txt); b.setObjectName("sideActive" if i==0 else "side"); b.setFixedHeight(38)
+            if i>0: b.setEnabled(False)
+            tabs.addWidget(b)
+        tabs.addStretch(); main.addLayout(tabs)
 
-        content=QHBoxLayout(); content.setSpacing(12)
+        area=QHBoxLayout(); area.setSpacing(12)
 
-        center=QFrame(); center.setObjectName("transferPanel"); cl=QVBoxLayout(center); cl.setContentsMargins(16,16,16,16)
-        cards=QHBoxLayout(); cards.setSpacing(10)
+        phones=QFrame(); phones.setObjectName("transferPhones"); pl=QVBoxLayout(phones); pl.setContentsMargins(14,14,14,14); pl.setSpacing(9)
+        cards=QHBoxLayout(); cards.setSpacing(8)
 
-        def phone_card(title,attr):
-            card=QFrame(); card.setObjectName("phoneCard"); q=QVBoxLayout(card); q.setContentsMargins(12,12,12,12)
-            lab=QLabel(title); lab.setObjectName("phoneName"); lab.setAlignment(Qt.AlignCenter); q.addWidget(lab)
-            visual=QFrame(); visual.setObjectName("phoneVisual"); visual.setFixedSize(142,210)
-            vl=QVBoxLayout(visual); vl.setContentsMargins(8,8,8,8)
-            icon=QLabel("▯"); icon.setObjectName("phoneGlyph"); icon.setAlignment(Qt.AlignCenter); vl.addWidget(icon)
-            hint=QLabel("Please connect\nAndroid via USB"); hint.setObjectName("phoneHint"); hint.setAlignment(Qt.AlignCenter); vl.addWidget(hint)
+        def make_phone(title_text,attr):
+            card=QFrame(); card.setObjectName("phoneCard"); q=QVBoxLayout(card); q.setContentsMargins(12,10,12,12)
+            t=QLabel(title_text); t.setObjectName("phoneTitle"); t.setAlignment(Qt.AlignCenter); q.addWidget(t)
+            visual=QFrame(); visual.setObjectName("phoneVisual"); visual.setFixedSize(145,205)
+            vl=QVBoxLayout(visual); vl.setContentsMargins(8,12,8,10)
+            icon=QLabel("▯"); icon.setObjectName("phoneIcon"); icon.setAlignment(Qt.AlignCenter); vl.addWidget(icon)
+            hint=QLabel("Connect Android\nvia USB"); hint.setObjectName("phoneHint"); hint.setAlignment(Qt.AlignCenter); vl.addWidget(hint)
             q.addWidget(visual,0,Qt.AlignCenter)
-            combo=QComboBox(); combo.setObjectName("transferDevice"); combo.setMinimumHeight(40); combo.setPlaceholderText("Please connect")
+            combo=QComboBox(); combo.setObjectName("device"); combo.setMinimumHeight(39); combo.setPlaceholderText("Please connect")
             setattr(self,attr,combo); q.addWidget(combo)
             return card
 
-        cards.addWidget(phone_card("SOURCE • MÁY CŨ","transfer_source"),1)
-        arrow=QLabel("⇄"); arrow.setStyleSheet("color:#2563eb;font-size:30pt;font-weight:900"); arrow.setAlignment(Qt.AlignCenter); cards.addWidget(arrow,0,Qt.AlignCenter)
-        cards.addWidget(phone_card("DESTINATION • MÁY MỚI","transfer_target"),1)
-        cl.addLayout(cards)
+        cards.addWidget(make_phone("SOURCE • MÁY CŨ","transfer_source"),1)
+        mid=QVBoxLayout(); mid.addStretch()
+        ar=QLabel("⇄"); ar.setStyleSheet("color:#2563eb;font-size:28pt;font-weight:900"); ar.setAlignment(Qt.AlignCenter); mid.addWidget(ar)
+        mid.addStretch(); cards.addLayout(mid,0)
+        cards.addWidget(make_phone("DESTINATION • MÁY MỚI","transfer_target"),1)
+        pl.addLayout(cards)
 
-        actions=QHBoxLayout()
-        check=QPushButton("🔎  Check connection"); check.setObjectName("transferSecondary"); check.clicked.connect(self.check_transfer_devices); actions.addWidget(check)
-        swap=QPushButton("⇄  Swap"); swap.setObjectName("transferSecondary"); swap.clicked.connect(self.swap_transfer_devices); actions.addWidget(swap)
-        actions.addStretch()
-        body_note=QLabel("✓ No data is deleted on destination by default")
-        body_note.setStyleSheet("color:#16a34a;font-weight:700")
-        actions.addWidget(body_note); cl.addLayout(actions)
-        content.addWidget(center,3)
+        pa=QHBoxLayout()
+        ck=QPushButton("🔎  Check connection"); ck.setObjectName("secondary"); ck.clicked.connect(self.check_transfer_devices); pa.addWidget(ck)
+        sw=QPushButton("⇄  Swap"); sw.setObjectName("secondary"); sw.clicked.connect(self.swap_transfer_devices); pa.addWidget(sw)
+        pa.addStretch()
+        safe=QLabel("✓ No data is deleted on destination by default"); safe.setObjectName("safe"); pa.addWidget(safe)
+        pl.addLayout(pa)
+        area.addWidget(phones,3)
 
-        data=QFrame(); data.setObjectName("dataPanel"); data.setFixedWidth(300); dl=QVBoxLayout(data); dl.setContentsMargins(16,16,16,16)
-        dh=QHBoxLayout(); dt=QLabel("Data to transfer"); dt.setObjectName("transferSection"); dh.addWidget(dt); dh.addStretch()
+        data=QFrame(); data.setObjectName("dataPanel"); data.setFixedWidth(290)
+        dl=QVBoxLayout(data); dl.setContentsMargins(15,15,15,15); dl.setSpacing(2)
+        dh=QHBoxLayout(); dh.setSpacing(5)
+        h=QLabel("Data to transfer"); h.setObjectName("section"); dh.addWidget(h); dh.addStretch()
         self.transfer_select_all=QCheckBox("All"); self.transfer_select_all.setChecked(True); self.transfer_select_all.stateChanged.connect(self.toggle_transfer_checks); dh.addWidget(self.transfer_select_all)
         dl.addLayout(dh)
         self.transfer_checks={}
-        categories=[
-            ("📷  Photos / DCIM","DCIM"),("🖼  Pictures","Pictures"),
-            ("🎬  Videos / Movies","Movies"),("🎵  Music","Music"),
-            ("📥  Downloads","Download"),("📄  Documents","Documents"),
-            ("📦  Android / media","Android/media")
-        ]
-        for text,path in categories:
-            cb=QCheckBox(text); cb.setChecked(True); self.transfer_checks[path]=cb; dl.addWidget(cb)
+        categories=[("📷  Photos / DCIM","DCIM"),("🖼  Pictures","Pictures"),("🎬  Videos / Movies","Movies"),("🎵  Music","Music"),("📥  Downloads","Download"),("📄  Documents","Documents"),("📦  Android / media","Android/media")]
+        for txt,path in categories:
+            cb=QCheckBox(txt); cb.setChecked(True); self.transfer_checks[path]=cb; dl.addWidget(cb)
         dl.addStretch()
-        info=QLabel("ⓘ Select only the data you need for faster and safer transfer.")
-        info.setObjectName("dataInfo"); info.setWordWrap(True); dl.addWidget(info)
-        content.addWidget(data,0)
-        body.addLayout(content,1)
+        inf=QLabel("ⓘ Select only the data you need for faster and safer transfer."); inf.setObjectName("info"); inf.setWordWrap(True); dl.addWidget(inf)
+        area.addWidget(data,0)
+        main.addLayout(area,1)
 
-        bottom=QHBoxLayout()
-        helpb=QPushButton("Cannot recognize the device?"); helpb.setObjectName("transferNav"); bottom.addWidget(helpb)
-        bottom.addStretch()
-        ai2=QLabel("✦ AI-powered transfer")
-        ai2.setStyleSheet("color:#8b5cf6;font-weight:800")
-        bottom.addWidget(ai2)
+        bottom=QHBoxLayout(); helpb=QPushButton("Cannot recognize the device?"); helpb.setObjectName("side"); bottom.addWidget(helpb); bottom.addStretch()
+        ai=QLabel("✦ AI-powered transfer"); ai.setObjectName("ai"); bottom.addWidget(ai)
         self.transfer_ai=QCheckBox(); self.transfer_ai.setChecked(True); bottom.addWidget(self.transfer_ai)
-        startb=QPushButton("✦  START")
-        startb.setObjectName("transferStart"); startb.setMinimumWidth(270); startb.clicked.connect(self.transfer_selected); bottom.addWidget(startb)
-        body.addLayout(bottom)
+        start=QPushButton("✦  START"); start.setObjectName("start"); start.setMinimumWidth(275); start.setMinimumHeight(48); start.clicked.connect(self.transfer_selected); bottom.addWidget(start)
+        main.addLayout(bottom)
 
-        out=QTextEdit(); out.setReadOnly(True); out.setMaximumHeight(125)
-        out.setStyleSheet("background:#f8fbff;color:#334155;border:1px solid #dbeafe;border-radius:10px;font-family:Consolas")
-        self.transfer_out=out; body.addWidget(out)
+        out=QTextEdit(); out.setObjectName("transferLog"); out.setReadOnly(True); out.setMinimumHeight(105); out.setMaximumHeight(130); self.transfer_out=out; main.addWidget(out)
+        root.addLayout(main,1)
 
-        root.addLayout(body,1)
         QTimer.singleShot(300,self.refresh_transfer_devices)
         return w
 
