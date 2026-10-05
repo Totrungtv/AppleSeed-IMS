@@ -278,13 +278,14 @@ class AndroidTool(QMainWindow):
                 pix = QPixmap(str(path))
                 if pix.isNull():
                     raise RuntimeError("Không đọc được ảnh PNG")
-                # Panoramic artwork: preserve the original aspect ratio and
-                # fit the complete image inside the dashboard banner.
+                # Dashboard hero: fill the entire banner card.
+                # The artwork is designed as a wide hero image, so use the
+                # exact card dimensions to eliminate empty side space.
                 label.setPixmap(
                     pix.scaled(
                         max(1, label.width() - 2),
                         max(1, label.height() - 2),
-                        Qt.KeepAspectRatio,
+                        Qt.IgnoreAspectRatio,
                         Qt.SmoothTransformation
                     )
                 )
