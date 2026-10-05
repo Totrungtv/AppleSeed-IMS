@@ -154,6 +154,7 @@ class AndroidTool(QMainWindow):
         super().__init__()
         self.base=Path(__file__).resolve().parent
         self.driver_manager=DriverManager(self.base)
+        self.ios_engine=IOSDeviceEngine(self.base)
         self.adb=self.find_adb()
         self.scrcpy=self.find_scrcpy()
         self.scrcpy_proc=None
@@ -197,8 +198,7 @@ class AndroidTool(QMainWindow):
         QStatusBar{background:#101827;color:#94a3b8}
         """
 
-    def build(self):
-        root=QWidget(); self.setCentralWidget(root)        main=QVBoxLayout(root); main.setContentsMargins(14,14,14,10); main.setSpacing(9)
+    def build(self):        root=QWidget(); self.setCentralWidget(root)        main=QVBoxLayout(root); main.setContentsMargins(14,14,14,10); main.setSpacing(9)
         head=QFrame(); head.setObjectName("head"); h=QHBoxLayout(head); h.setContentsMargins(18,12,18,12)
         a=QLabel("◉ Apple Seed"); a.setObjectName("brand"); h.addWidget(a)
         b=QLabel("ANDROID SERVICE CENTER"); b.setObjectName("blue"); h.addWidget(b)
@@ -397,8 +397,7 @@ class AndroidTool(QMainWindow):
         # Cho subprocess chạy tại đúng thư mục đó và thêm thư mục vào PATH.
         exe_dir = str(Path(path).resolve().parent)
         env = os.environ.copy()
-        env["PATH"] = exe_dir + os.pathsep + env.get("PATH", "")        p = subprocess.run(
-            [path] + list(args or []),
+        env["PATH"] = exe_dir + os.pathsep + env.get("PATH", "")        p = subprocess.run(            [path] + list(args or []),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -597,8 +596,7 @@ class AndroidTool(QMainWindow):
         self._ios_log("Hidden account: module chưa được bật.")
 
     def ios_action_info(self, action):        labels = {
-            "backup": "Backup iOS sẽ được triển khai bằng engine libimobiledevice/Apple tương thích.",
-            "restore": "Restore có thể xoá dữ liệu và chỉ nên bật sau khi có engine/firmware hợp lệ.",
+            "backup": "Backup iOS sẽ được triển khai bằng engine libimobiledevice/Apple tương thích.",            "restore": "Restore có thể xoá dữ liệu và chỉ nên bật sau khi có engine/firmware hợp lệ.",
             "firmware": "Firmware/iPSW cần engine restore tương thích và kiểm tra thiết bị trước khi chạy."
         }
         self._ios_log(labels.get(action,"iOS service action"))
@@ -797,8 +795,7 @@ class AndroidTool(QMainWindow):
 
     def swap_transfer_devices(self):        a=self.transfer_source.currentIndex(); b=self.transfer_target.currentIndex()
         if a<0 or b<0:return
-        self.transfer_source.setCurrentIndex(b)
-        self.transfer_target.setCurrentIndex(a)
+        self.transfer_source.setCurrentIndex(b)        self.transfer_target.setCurrentIndex(a)
 
     def toggle_transfer_checks(self,state):
         checked=bool(state)
@@ -997,8 +994,7 @@ class AndroidTool(QMainWindow):
                 rc,out=self.run(["-s",src,"pull","/sdcard/.",str(local)],3600)                if rc!=0:
                     raise RuntimeError("PULL /sdcard thất bại: "+(out or "ADB error"))
                 self._volte_progress(60,"Đang chép toàn bộ dữ liệu sang máy mới")
-                self.run(["-s",dst,"shell","mkdir","-p","/sdcard"],30)
-                rc2,out2=self.run(["-s",dst,"push",str(local)+"/.","/sdcard/"],3600)
+                self.run(["-s",dst,"shell","mkdir","-p","/sdcard"],30)                rc2,out2=self.run(["-s",dst,"push",str(local)+"/.","/sdcard/"],3600)
                 if rc2!=0:
                     raise RuntimeError("PUSH /sdcard thất bại: "+(out2 or "ADB error"))
                 self._volte_progress(100,"Chuyển toàn bộ hoàn tất")
@@ -1197,8 +1193,7 @@ class AndroidTool(QMainWindow):
                 if current and current not in online:
                     self._shizuku_autostart_serial=""
                     self.post(self.refresh_devices)
-                elif not current and online:
-                    self.post(self.refresh_devices)
+                elif not current and online:                    self.post(self.refresh_devices)
             except Exception as e:
                 self.log("ADB monitor: "+str(e))
             finally:
@@ -1398,7 +1393,6 @@ class AndroidTool(QMainWindow):
                     self.log("⚠ Không force-stop được com.android.phone: "+str(e))
 
                 self.log("✅ Sau reboot: hoàn tất khôi phục VoLTE + CarrierConfig + IMS.")
-
             except Exception as e:
                 self.log("🔄 Auto VoLTE/Shizuku ERROR: "+str(e))
             finally:
@@ -1597,8 +1591,7 @@ class AndroidTool(QMainWindow):
         Không root, không sao lưu phân vùng hệ thống/IMEI/NVRAM.
         """
         if not self.require(): return
-        folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}"
-        folder.mkdir(parents=True,exist_ok=True)
+        folder=self.base/"backups"/f"{self.serial}_{time.strftime('%Y%m%d_%H%M%S')}"        folder.mkdir(parents=True,exist_ok=True)
 
         def w():
             try:
@@ -1797,8 +1790,7 @@ class AndroidTool(QMainWindow):
         if "moe.shizuku.privileged.api" not in pkg_out:
             return False, "Chưa cài Shizuku (moe.shizuku.privileged.api)."
 
-        def get_shizuku_pid():
-            # Shizuku server trên CPH1905 thực tế chạy tên shizuku_server.
+        def get_shizuku_pid():            # Shizuku server trên CPH1905 thực tế chạy tên shizuku_server.
             # pidof có thể không hoạt động giống nhau giữa các toybox,
             # nên dùng cả pidof và ps làm fallback.
             for proc in ("shizuku_server", "moe.shizuku.privileged.api"):
@@ -1997,8 +1989,7 @@ class AndroidTool(QMainWindow):
 
                 try:
                     (folder/"getprop.txt").write_text(
-                        self.shell("getprop",20),encoding="utf-8"
-                    )
+                        self.shell("getprop",20),encoding="utf-8"                    )
                 except Exception as e:
                     out.append("BACKUP: "+str(e))
 
