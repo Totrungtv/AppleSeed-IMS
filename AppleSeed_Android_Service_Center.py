@@ -387,7 +387,22 @@ class AndroidTool(QMainWindow):
             h=QLabel(heading); h.setStyleSheet("color:#17365d;font-weight:900;margin-top:7px"); sl.addWidget(h)
             for i,txt in enumerate(items):
                 b=QPushButton(txt); b.setObjectName("sideActive" if i==active else "side")
-                if i!=active: b.setEnabled(False)
+                # Sidebar phải có thể bấm; các mục chưa có engine riêng sẽ báo trạng thái
+                # thay vì bị disabled như bản trước.
+                if txt == "▣  Phone to Phone":
+                    b.clicked.connect(lambda checked=False: self._transfer_sidebar_info("Phone to Phone", "Đang ở chế độ chuyển máy → máy."))
+                elif txt == "▣  Phone to PC":
+                    b.clicked.connect(lambda checked=False: self.transfer_backup_pc())
+                elif txt == "▦  App to App":
+                    b.clicked.connect(lambda checked=False: self._transfer_sidebar_info("App to App", "App-private data cần quyền riêng của Android/hãng; Apple Seed hiện không giả lập quyền hệ thống."))
+                elif txt == "▦  Home Screen":
+                    b.clicked.connect(lambda checked=False: self._transfer_sidebar_info("Home Screen", "Tính năng bố trí màn hình chính chưa có engine riêng."))
+                elif txt == "▣  Backup Android":
+                    b.clicked.connect(lambda checked=False: self.transfer_backup_pc())
+                elif txt == "♻  Restore Android":
+                    b.clicked.connect(lambda checked=False: self.transfer_restore_pc())
+                else:
+                    b.clicked.connect(lambda checked=False, name=txt: self._transfer_sidebar_info(name, "Mục này đang được đặt trong giao diện Transfer Center; engine chuyển riêng chưa được bật."))
                 sl.addWidget(b)
         sl.addStretch()
         tip=QLabel("Apple Seed Transfer\nUSB • ADB • PC staging")
@@ -467,6 +482,16 @@ class AndroidTool(QMainWindow):
 
         QTimer.singleShot(300,self.refresh_transfer_devices)
         return w
+
+    def _transfer_sidebar_info(self, name, message):
+        """Hiển thị trạng thái khi người dùng bấm các module Transfer."""
+        if hasattr(self, "transfer_out"):
+            self.transfer_out.setPlainText(
+                "===== APPLE SEED TRANSFER =====\\n\\n"
+                + name + "\\n"
+                + message
+            )
+        self.status.showMessage(name + " • " + message, 5000)
 
     def swap_transfer_devices(self):
         a=self.transfer_source.currentIndex(); b=self.transfer_target.currentIndex()
