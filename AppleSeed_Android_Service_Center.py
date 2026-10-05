@@ -156,6 +156,7 @@ class AndroidTool(QMainWindow):
         main.addWidget(bar)
         self.tabs=QTabWidget(); main.addWidget(self.tabs,1)
         self.tabs.addTab(self.home_tab(),"⌂  TỔNG QUAN")
+        self.tabs.addTab(self.transfer_tab(),"⇄  CHUYỂN DỮ LIỆU")
         self.tabs.addTab(self.volte_tab(),"☎  VoLTE / IMS")
         self.tabs.addTab(self.device_tab(),"▣  THIẾT BỊ")
         self.tabs.addTab(self.diag_tab(),"⌁  CHẨN ĐOÁN")
@@ -287,6 +288,225 @@ class AndroidTool(QMainWindow):
         else:
             label.setText("APPLE SEED • FUTURE SERVICE ROBOT")
         return label
+
+    def transfer_tab(self):
+        """Trung tâm chuyển dữ liệu Android qua PC bằng ADB: máy cũ -> PC -> máy mới."""
+        w=QWidget(); l=QVBoxLayout(w)
+
+        title=QLabel("CHUYỂN DỮ LIỆU ANDROID")
+        title.setStyleSheet("font-size:21pt;font-weight:800")
+        l.addWidget(title)
+
+        info=QLabel(
+            "Máy cũ → PC → máy mới • Không cần Internet • ADB trực tiếp. "
+            "Ưu tiên dữ liệu người dùng như DCIM, Pictures, Movies, Music, Download, Documents và Android/media."
+        )
+        info.setObjectName("muted")
+        info.setWordWrap(True)
+        l.addWidget(info)
+
+        card=QFrame(); card.setObjectName("card"); form=QGridLayout(card)
+        form.addWidget(QLabel("📱 MÁY CŨ / NGUỒN"),0,0)
+        self.transfer_source=QComboBox(); self.transfer_source.setMinimumWidth(420); form.addWidget(self.transfer_source,0,1)
+        form.addWidget(QLabel("📱 MÁY MỚI / ĐÍCH"),1,0)
+        self.transfer_target=QComboBox(); self.transfer_target.setMinimumWidth(420); form.addWidget(self.transfer_target,1,1)
+        l.addWidget(card)
+
+        row=QHBoxLayout()
+        self.button(row,"↻ QUÉT THIẾT BỊ",self.refresh_transfer_devices,"primary")
+        self.button(row,"🔎 KIỂM TRA",self.check_transfer_devices)
+        self.button(row,"💾 SAO LƯU MÁY CŨ VÀO PC",self.transfer_backup_pc,"green")
+        self.button(row,"♻ KHÔI PHỤC TỪ PC",self.transfer_restore_pc,"green")
+        l.addLayout(row)
+
+        row2=QHBoxLayout()
+        self.button(row2,"⚡ CHUYỂN DỮ LIỆU CƠ BẢN",self.transfer_basic,"primary")
+        self.button(row2,"📦 CHUYỂN TOÀN BỘ /sdcard",self.transfer_full,"red")
+        l.addLayout(row2)
+
+        note=QLabel(
+            "⚠ Android hiện đại không cho ADB đọc toàn bộ dữ liệu riêng của từng ứng dụng. "
+            "Chức năng này chuyển dữ liệu người dùng và Android/media; dữ liệu app riêng tư, "
+            "SMS, tài khoản và app data có thể cần tính năng backup/restore của chính ứng dụng hoặc quyền đặc biệt."
+        )
+        note.setObjectName("muted"); note.setWordWrap(True); l.addWidget(note)
+
+        self.transfer_out=QTextEdit(); self.transfer_out.setReadOnly(True); l.addWidget(self.transfer_out,1)
+        QTimer.singleShot(300,self.refresh_transfer_devices)
+        return w
+
+    def _transfer_serial(self, combo):
+        i=combo.currentIndex()
+        return combo.itemData(i) if i>=0 else ""
+
+    def _transfer_pair(self):
+        src=self._transfer_serial(self.transfer_source)
+        dst=self._transfer_serial(self.transfer_target)
+        if not src or not dst:
+            QMessageBox.warning(self,"Chuyển dữ liệu","Hãy chọn máy cũ và máy mới.")
+            return None,None
+        if src==dst:
+            QMessageBox.warning(self,"Chuyển dữ liệu","Máy nguồn và máy đích phải là 2 thiết bị khác nhau.")
+            return None,None
+        return src,dst
+
+    def refresh_transfer_devices(self):
+        if not self.adb:self.adb=self.find_adb()
+        if not self.adb:
+            self.log("❌ Chuyển dữ liệu: không tìm thấy adb.exe."); return
+        def w():
+            try:
+                self.run(["start-server"],10)
+                rc,out=self.run(["devices"],15)
+                rows=[]
+                for line in out.splitlines()[1:]:
+                    p=line.split()
+                    if len(p)>=2 and p[1]=="device":
+                        serial=p[0]
+                        try:
+                            _,model=self.run(["-s",serial,"shell","getprop","ro.product.model"],8)
+                            model=(model or "").splitlines()[0].strip() or "Android"
+                        except Exception:
+                            model="Android"
+                        rows.append((serial,model))
+                def ui():
+                    for combo in (self.transfer_source,self.transfer_target):
+                        combo.blockSignals(True); combo.clear()
+                        for serial,model in rows:
+                            combo.addItem(f"{model} • {serial}",serial)
+                        combo.blockSignals(False)
+                    if len(rows)>=2:
+                        self.transfer_source.setCurrentIndex(0)
+                        self.transfer_target.setCurrentIndex(1)
+                    elif len(rows)==1:
+                        self.transfer_source.setCurrentIndex(0)
+                        self.transfer_target.setCurrentIndex(-1)
+                    self.transfer_out.setPlainText(
+                        "===== THIẾT BỊ ADB =====\n" +
+                        ("\n".join(f"{m} • {s}" for s,m in rows) if rows else "Chưa có 2 thiết bị ADB.")
+                    )
+                self.post(ui)
+            except Exception as e:
+                self.log("Transfer scan error: "+str(e))
+        self.threaded(w)
+
+    def check_transfer_devices(self):
+        src,dst=self._transfer_pair()
+        if not src or not dst:return
+        def w():
+            try:
+                out=[]
+                for label,serial in (("MÁY CŨ",src),("MÁY MỚI",dst)):
+                    _,model=self.run(["-s",serial,"shell","getprop","ro.product.model"],8)
+                    _,android=self.run(["-s",serial,"shell","getprop","ro.build.version.release"],8)
+                    _,free=self.run(["-s",serial,"shell","df","-h","/sdcard"],10)
+                    out.append(f"===== {label} =====\nSerial: {serial}\nModel: {model.strip()}\nAndroid: {android.strip()}\n\n{free.strip()}")
+                self.showout(self.transfer_out,"KIỂM TRA CHUYỂN DỮ LIỆU","\n\n".join(out))
+            except Exception as e:self.showout(self.transfer_out,"KIỂM TRA","LỖI: "+str(e))
+        self.threaded(w)
+
+    def _transfer_pull_push(self, src, dst, folders, title):
+        work=self.base/"backups"/"transfers"/f"{src}_to_{dst}_{time.strftime('%Y%m%d_%H%M%S')}"
+        work.mkdir(parents=True,exist_ok=True)
+        copied=[]; errors=[]
+        try:
+            self._volte_progress(5,"Chuẩn bị chuyển dữ liệu")
+            for idx,folder in enumerate(folders,1):
+                local=work/folder.strip("/").replace("/","_")
+                local.mkdir(parents=True,exist_ok=True)
+                remote="/sdcard/"+folder.strip("/")
+                self._volte_progress(min(75,5+idx*10),f"Đang lấy {remote}")
+                rc,out=self.run(["-s",src,"pull",remote,str(local)],1800)
+                if rc!=0:
+                    errors.append(f"PULL {remote}: {out}")
+                    continue
+                self._volte_progress(min(90,15+idx*10),f"Đang chép {folder} sang máy mới")
+                target="/sdcard/"+folder.strip("/")
+                self.run(["-s",dst,"shell","mkdir","-p",target],30)
+                rc2,out2=self.run(["-s",dst,"push",str(local)+"/.",target],1800)
+                if rc2!=0:
+                    errors.append(f"PUSH {target}: {out2}")
+                else:
+                    copied.append(folder)
+            self._volte_progress(100,"Chuyển dữ liệu hoàn tất")
+            report=["===== APPLE SEED — "+title+" =====","",f"Nguồn: {src}",f"Đích: {dst}",f"PC staging: {work}","",
+                    "ĐÃ CHUYỂN: "+(", ".join(copied) if copied else "không có")]
+            if errors: report += ["","LỖI / BỎ QUA:"]+errors
+            self.showout(self.transfer_out,title,"\n".join(report))
+            self.log("✅ "+title+" hoàn tất. PC staging: "+str(work))
+            self.post(lambda:QMessageBox.information(self,"Apple Seed — Chuyển dữ liệu",
+                "Đã hoàn tất chuyển dữ liệu.\n\nDữ liệu tạm được giữ tại:\n"+str(work)))
+        except Exception as e:
+            self._volte_progress(0,"Chuyển dữ liệu lỗi")
+            self.showout(self.transfer_out,title,"❌ LỖI: "+str(e))
+            self.post(lambda e=str(e):QMessageBox.warning(self,"Chuyển dữ liệu lỗi",e))
+
+    def transfer_basic(self):
+        src,dst=self._transfer_pair()
+        if not src or not dst:return
+        if not self.ask("CHUYỂN DỮ LIỆU CƠ BẢN",
+            "Chuyển DCIM, Pictures, Movies, Music, Download, Documents và Android/media từ máy cũ sang máy mới?"):
+            return
+        folders=["DCIM","Pictures","Movies","Music","Download","Documents","Android/media"]
+        self.threaded(lambda:self._transfer_pull_push(src,dst,folders,"CHUYỂN DỮ LIỆU CƠ BẢN"))
+
+    def transfer_full(self):
+        src,dst=self._transfer_pair()
+        if not src or not dst:return
+        if not self.ask("CHUYỂN TOÀN BỘ /sdcard",
+            "Chuyển toàn bộ bộ nhớ dùng chung /sdcard của máy cũ sang máy mới?\n\n"
+            "Có thể mất nhiều thời gian và cần rất nhiều dung lượng PC/máy mới."):
+            return
+        folders=["/"]
+        self.threaded(lambda:self._transfer_pull_push(src,dst,folders,"CHUYỂN TOÀN BỘ /sdcard"))
+
+    def transfer_backup_pc(self):
+        src=self._transfer_serial(self.transfer_source)
+        if not src:
+            QMessageBox.warning(self,"Backup PC","Chọn máy cũ / nguồn trước."); return
+        folder=QFileDialog.getExistingDirectory(self,"Chọn nơi lưu backup trên PC",str(self.base/"backups"/"transfers"))
+        if not folder:return
+        root=Path(folder)/f"Android_{src}_{time.strftime('%Y%m%d_%H%M%S')}"
+        root.mkdir(parents=True,exist_ok=True)
+        folders=["DCIM","Pictures","Movies","Music","Download","Documents","Android/media"]
+        def w():
+            try:
+                for idx,sub in enumerate(folders,1):
+                    self._volte_progress(int(idx/len(folders)*100),f"Backup {sub}")
+                    self.run(["-s",src,"pull","/sdcard/"+sub,str(root)],1800)
+                self._volte_progress(100,"Backup PC hoàn tất")
+                self.showout(self.transfer_out,"BACKUP ANDROID VÀO PC",f"Đã lưu tại:\n{root}")
+                self.post(lambda:QMessageBox.information(self,"Backup PC","Đã sao lưu dữ liệu vào:\n"+str(root)))
+            except Exception as e:
+                self.showout(self.transfer_out,"BACKUP PC","LỖI: "+str(e))
+        self.threaded(w)
+
+    def transfer_restore_pc(self):
+        dst=self._transfer_serial(self.transfer_target)
+        if not dst:
+            QMessageBox.warning(self,"Restore PC","Chọn máy mới / đích trước."); return
+        folder=QFileDialog.getExistingDirectory(self,"Chọn thư mục Android backup trên PC")
+        if not folder:return
+        if not self.ask("KHÔI PHỤC ANDROID",
+            "Chép dữ liệu từ thư mục backup PC vào máy mới?"):
+            return
+        root=Path(folder)
+        folders=["DCIM","Pictures","Movies","Music","Download","Documents","Android/media"]
+        def w():
+            try:
+                for idx,sub in enumerate(folders,1):
+                    local=root/sub
+                    if not local.exists():continue
+                    self._volte_progress(int(idx/len(folders)*100),f"Restore {sub}")
+                    target="/sdcard/"+sub
+                    self.run(["-s",dst,"shell","mkdir","-p",target],30)
+                    self.run(["-s",dst,"push",str(local),"/sdcard"],1800)
+                self._volte_progress(100,"Restore PC hoàn tất")
+                self.showout(self.transfer_out,"RESTORE ANDROID TỪ PC",f"Đã khôi phục vào máy mới:\n{dst}")
+                self.post(lambda:QMessageBox.information(self,"Restore PC","Đã khôi phục dữ liệu vào máy mới."))
+            except Exception as e:
+                self.showout(self.transfer_out,"RESTORE PC","LỖI: "+str(e))
+        self.threaded(w)
 
     def home_tab(self):
         w=QWidget(); l=QVBoxLayout(w)
