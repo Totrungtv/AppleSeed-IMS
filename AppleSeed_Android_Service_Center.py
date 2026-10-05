@@ -540,6 +540,27 @@ class AndroidTool(QMainWindow):
         except Exception as e:
             self._ios_log("❌ DEVICE INFO: "+str(e))
 
+    def ios_probe_mode(self, label, tool, args=None):
+        """Kiểm tra nhanh chế độ iOS Normal / Recovery / DFU."""
+        try:
+            out=self._ios_run(tool,args or [],timeout=15)
+            if label == "NORMAL":
+                self._ios_set_field(self.ios_mode,"Normal")
+                self._ios_log("✓ NORMAL: iPhone/iPad đang được nhận qua usbmuxd.")
+                if out.strip():
+                    self._ios_log("UDID: "+out.strip().replace("\n",", "))
+                self.ios_progress.setValue(100)
+            else:
+                # irecovery -q trả thông tin thiết bị khi ở Recovery/DFU.
+                self._ios_set_field(self.ios_mode,label)
+                self._ios_log("✓ "+label+": đã phản hồi từ irecovery.")
+                if out.strip():
+                    self._ios_log(out[:3000])
+                self.ios_progress.setValue(100)
+        except Exception as e:
+            self._ios_log("⚠ "+label+": "+str(e))
+            self.ios_progress.setValue(25)
+
     def ios_ramdisk_info(self):
         self._ios_log("BOOT RAMDISK: Apple Seed đã nhận engine; cần module ramdisk tương thích trước khi chạy.")
         self.ios_progress.setValue(10)
