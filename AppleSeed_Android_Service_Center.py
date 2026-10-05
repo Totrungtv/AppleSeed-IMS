@@ -373,136 +373,76 @@ class AndroidTool(QMainWindow):
         return out
 
     def ios_tab(self):
-        """Trang iOS riêng: quản lý iPhone/iPad, độc lập với các tab Android."""
-        w = QWidget()
+        """iOS Service Center — giao diện riêng, rõ ràng và đồng bộ với Apple Seed."""
+        w=QWidget()
         w.setObjectName("iosPage")
         w.setStyleSheet("""
-            QWidget#iosPage{background:#eef5ff}
-            QWidget#iosPage QLabel{background:transparent;color:#17365d}
-            QWidget#iosPage QComboBox{background:#ffffff;color:#17365d;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px}
-            QFrame#iosCard{background:#ffffff;border:1px solid #d5e5f5;border-radius:15px}
-            QFrame#iosHero{background:#071a2f;border:1px solid #2563eb;border-radius:16px}
-            QLabel#iosTitle{color:#12345a;font-size:23pt;font-weight:900}
-            QLabel#iosSub{color:#64748b;font-size:10pt}
-            QLabel#iosSection{color:#17365d;font-size:11pt;font-weight:900}
-            QLabel#iosIcon{color:#f8fafc;font-size:46pt;font-weight:700}
-            QLabel#iosStatus{color:#16a34a;font-weight:900}
-            QPushButton#iosPrimary{background:#2563eb;color:white;border:0;border-radius:10px;padding:11px 18px;font-weight:900}
-            QPushButton#iosSecondary{background:#ffffff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:10px 15px;font-weight:800}
-            QPushButton#iosDanger{background:#fff1f2;color:#be123c;border:1px solid #fecdd3;border-radius:9px;padding:10px 15px;font-weight:800}
-            QTextEdit#iosLog{background:#ffffff;color:#334155;border:1px solid #d5e5f5;border-radius:10px;font-family:Consolas;font-size:9pt}
+            QWidget#iosPage{background:#080d18}
+            QWidget#iosPage QLabel{background:transparent;color:#e5e7eb}
+            QFrame#iosCard{background:#0d1422;border:1px solid #1e293b;border-radius:14px}
+            QFrame#iosHero{background:#0b1628;border:1px solid #2563eb;border-radius:14px}
+            QLabel#iosTitle{color:#f8fafc;font-size:21pt;font-weight:900}
+            QLabel#iosSub{color:#94a3b8;font-size:9.5pt}
+            QLabel#iosSection{color:#38bdf8;font-size:10pt;font-weight:900}
+            QLabel#iosIcon{color:#f8fafc;font-size:38pt;font-weight:700}
+            QLabel#iosStatus{background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900}
+            QComboBox#iosDevice{background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:9px 10px}
+            QPushButton#iosPrimary{background:#2563eb;color:white;border:1px solid #60a5fa;border-radius:8px;padding:10px 15px;font-weight:800}
+            QPushButton#iosPrimary:hover{background:#1d4ed8}
+            QPushButton#iosSecondary{background:#172033;color:#e5e7eb;border:1px solid #2b3a52;border-radius:8px;padding:10px 15px;font-weight:800}
+            QPushButton#iosSecondary:hover{background:#1d4ed8;border-color:#3b82f6}
+            QPushButton#iosDanger{background:#3b1720;color:#fecaca;border:1px solid #7f1d1d;border-radius:8px;padding:10px 15px;font-weight:800}
+            QLabel#iosHint{color:#64748b;font-size:8.5pt}
+            QTextEdit#iosInfo,QTextEdit#iosLog{background:#050a12;color:#dbeafe;border:1px solid #1e293b;border-radius:9px;font-family:Consolas;font-size:9pt}
         """)
-        root = QVBoxLayout(w)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
+        root=QVBoxLayout(w); root.setContentsMargins(14,14,14,14); root.setSpacing(12)
 
-        hero = QFrame()
-        hero.setObjectName("iosHero")
-        hl = QHBoxLayout(hero)
-        hl.setContentsMargins(20, 16, 20, 16)
-        icon = QLabel("")
-        icon.setObjectName("iosIcon")
-        icon.setAlignment(Qt.AlignCenter)
-        icon.setFixedWidth(75)
-        hl.addWidget(icon)
-        tx = QVBoxLayout()
-        title = QLabel("iOS Service Center")
-        title.setObjectName("iosTitle")
-        title.setStyleSheet("color:#f8fafc;font-size:22pt;font-weight:900")
-        tx.addWidget(title)
-        sub = QLabel("Apple iPhone / iPad • USB • Normal • Recovery • DFU")
-        sub.setObjectName("iosSub")
-        sub.setStyleSheet("color:#bfdbfe;font-size:10pt")
-        tx.addWidget(sub)
-        hl.addLayout(tx)
-        hl.addStretch()
-        status = QLabel("iOS: CHƯA KẾT NỐI")
-        status.setObjectName("iosStatus")
-        status.setStyleSheet("background:#1e293b;color:#94a3b8;border-radius:9px;padding:9px 14px;font-weight:900")
-        self.ios_status = status
-        hl.addWidget(status)
+        hero=QFrame(); hero.setObjectName("iosHero")
+        hl=QHBoxLayout(hero); hl.setContentsMargins(18,14,18,14); hl.setSpacing(14)
+        icon=QLabel(""); icon.setObjectName("iosIcon"); icon.setAlignment(Qt.AlignCenter); icon.setFixedWidth(62); hl.addWidget(icon)
+        tx=QVBoxLayout(); tx.setSpacing(2)
+        title=QLabel("iOS Service Center"); title.setObjectName("iosTitle"); tx.addWidget(title)
+        sub=QLabel("iPhone / iPad  •  USB  •  Normal  •  Recovery  •  DFU"); sub.setObjectName("iosSub"); tx.addWidget(sub)
+        hl.addLayout(tx); hl.addStretch()
+        self.ios_status=QLabel("iOS: CHƯA KẾT NỐI"); self.ios_status.setObjectName("iosStatus"); hl.addWidget(self.ios_status)
         root.addWidget(hero)
 
-        row = QHBoxLayout()
-        row.setSpacing(12)
+        row=QHBoxLayout(); row.setSpacing(12)
 
-        device = QFrame()
-        device.setObjectName("iosCard")
-        dl = QVBoxLayout(device)
-        dl.setContentsMargins(16, 16, 16, 16)
-        sec = QLabel("THIẾT BỊ iOS"); sec.setObjectName("iosSection"); dl.addWidget(sec)
-        self.ios_devices = QComboBox()
-        self.ios_devices.setMinimumHeight(40)
-        self.ios_devices.setPlaceholderText("Chưa phát hiện iPhone / iPad")
-        dl.addWidget(self.ios_devices)
-        br = QHBoxLayout()
-        b = QPushButton("↻  QUÉT iOS")
-        b.setObjectName("iosPrimary")
-        b.clicked.connect(self.refresh_ios_devices)
-        br.addWidget(b)
-        b = QPushButton("ℹ  THÔNG TIN")
-        b.setObjectName("iosSecondary")
-        b.clicked.connect(self.ios_device_info)
-        br.addWidget(b)
+        device=QFrame(); device.setObjectName("iosCard")
+        dl=QVBoxLayout(device); dl.setContentsMargins(15,14,15,14); dl.setSpacing(9)
+        sec=QLabel("THIẾT BỊ iOS"); sec.setObjectName("iosSection"); dl.addWidget(sec)
+        self.ios_devices=QComboBox(); self.ios_devices.setObjectName("iosDevice"); self.ios_devices.setMinimumHeight(40); self.ios_devices.setPlaceholderText("Chưa phát hiện iPhone / iPad"); dl.addWidget(self.ios_devices)
+        br=QHBoxLayout(); br.setSpacing(8)
+        b=QPushButton("↻  QUÉT THIẾT BỊ"); b.setObjectName("iosPrimary"); b.clicked.connect(self.refresh_ios_devices); br.addWidget(b)
+        b=QPushButton("ℹ  THÔNG TIN"); b.setObjectName("iosSecondary"); b.clicked.connect(self.ios_device_info); br.addWidget(b)
         dl.addLayout(br)
-        row.addWidget(device, 1)
+        row.addWidget(device,1)
 
-        modes = QFrame()
-        modes.setObjectName("iosCard")
-        ml = QVBoxLayout(modes)
-        ml.setContentsMargins(16, 16, 16, 16)
-        sec = QLabel("CHẾ ĐỘ & CÔNG CỤ"); sec.setObjectName("iosSection"); ml.addWidget(sec)
-        r1 = QHBoxLayout()
-        for text, tool, args in [
-            ("Normal", "idevice_id", ["-l"]),
-            ("Recovery / DFU", "irecovery", ["-q"]),
-        ]:
-            bb = QPushButton(text)
-            bb.setObjectName("iosSecondary")
-            bb.clicked.connect(lambda checked=False, t=tool, a=args, n=text: self.ios_probe_mode(n, t, a))
-            r1.addWidget(bb)
+        modes=QFrame(); modes.setObjectName("iosCard")
+        ml=QVBoxLayout(modes); ml.setContentsMargins(15,14,15,14); ml.setSpacing(9)
+        sec=QLabel("CHẾ ĐỘ & CÔNG CỤ"); sec.setObjectName("iosSection"); ml.addWidget(sec)
+        r1=QHBoxLayout(); r1.setSpacing(8)
+        for text,tool,args in [("📱 NORMAL","idevice_id",["-l"]),("🔧 RECOVERY / DFU","irecovery",["-q"])]:
+            bb=QPushButton(text); bb.setObjectName("iosSecondary"); bb.clicked.connect(lambda checked=False,t=tool,a=args,n=text:self.ios_probe_mode(n,t,a)); r1.addWidget(bb)
         ml.addLayout(r1)
-        r2 = QHBoxLayout()
-        for text, action in [
-            ("Backup", "backup"),
-            ("Restore", "restore"),
-            ("Firmware", "firmware"),
-        ]:
-            bb = QPushButton(text)
-            bb.setObjectName("iosDanger" if action == "restore" else "iosSecondary")
-            bb.clicked.connect(lambda checked=False, a=action: self.ios_action_info(a))
-            r2.addWidget(bb)
+        r2=QHBoxLayout(); r2.setSpacing(8)
+        for text,action in [("💾 BACKUP","backup"),("♻ RESTORE","restore"),("📦 FIRMWARE","firmware")]:
+            bb=QPushButton(text); bb.setObjectName("iosDanger" if action=="restore" else "iosSecondary"); bb.clicked.connect(lambda checked=False,a=action:self.ios_action_info(a)); r2.addWidget(bb)
         ml.addLayout(r2)
-        note = QLabel(
-            "Các thao tác Restore/Firmware chưa tự chạy. Apple Seed chỉ bật engine khi "
-            "đã có bộ công cụ iOS tương thích."
-        )
-        note.setWordWrap(True)
-        note.setStyleSheet("color:#64748b;font-size:8.5pt")
-        ml.addWidget(note)
-        row.addWidget(modes, 1)
-
+        hint=QLabel("Restore/Firmware sẽ chỉ chạy khi engine iOS và firmware hợp lệ được cài đặt."); hint.setObjectName("iosHint"); hint.setWordWrap(True); ml.addWidget(hint)
+        row.addWidget(modes,1)
         root.addLayout(row)
 
-        info = QFrame()
-        info.setObjectName("iosCard")
-        il = QVBoxLayout(info)
-        il.setContentsMargins(16, 14, 16, 14)
-        sec = QLabel("iOS DEVICE INFO"); sec.setObjectName("iosSection"); il.addWidget(sec)
-        self.ios_info = QTextEdit()
-        self.ios_info.setReadOnly(True)
-        self.ios_info.setMinimumHeight(150)
-        il.addWidget(self.ios_info)
+        info=QFrame(); info.setObjectName("iosCard")
+        il=QVBoxLayout(info); il.setContentsMargins(15,14,15,14); il.setSpacing(8)
+        sec=QLabel("THÔNG TIN THIẾT BỊ"); sec.setObjectName("iosSection"); il.addWidget(sec)
+        self.ios_info=QTextEdit(); self.ios_info.setObjectName("iosInfo"); self.ios_info.setReadOnly(True); self.ios_info.setMinimumHeight(145); il.addWidget(self.ios_info)
         root.addWidget(info)
 
-        log = QTextEdit()
-        log.setObjectName("iosLog")
-        log.setReadOnly(True)
-        log.setMinimumHeight(120)
-        self.ios_log = log
-        root.addWidget(log, 1)
-
-        QTimer.singleShot(350, self.refresh_ios_devices)
+        log=QTextEdit(); log.setObjectName("iosLog"); log.setReadOnly(True); log.setMinimumHeight(105); log.setMaximumHeight(135); self.ios_log=log
+        root.addWidget(log,1)
+        QTimer.singleShot(350,self.refresh_ios_devices)
         return w
 
     def _ios_log(self, text):
