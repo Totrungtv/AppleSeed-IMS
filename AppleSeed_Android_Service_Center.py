@@ -278,17 +278,19 @@ class AndroidTool(QMainWindow):
                 pix = QPixmap(str(path))
                 if pix.isNull():
                     raise RuntimeError("Không đọc được ảnh PNG")
-                # Dashboard hero: fill the entire banner card.
-                # The artwork is designed as a wide hero image, so use the
-                # exact card dimensions to eliminate empty side space.
-                label.setPixmap(
-                    pix.scaled(
-                        max(1, label.width() - 2),
-                        max(1, label.height() - 2),
-                        Qt.IgnoreAspectRatio,
-                        Qt.SmoothTransformation
-                    )
+                # Let Qt stretch the already-loaded panoramic artwork to
+                # the actual QLabel size.  This is important because this
+                # method runs before the layout gets its final width; scaling
+                # here would otherwise use the temporary default width and
+                # leave large empty areas on the sides.
+                label.setPixmap(pix)
+                label.setScaledContents(True)
+                label.setSizePolicy(
+                    __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Expanding,
+                    __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Fixed
                 )
+                label.setMinimumHeight(300)
+                label.setMaximumHeight(320)
             except Exception as e:
                 label.setText("APPLE SEED • SERVICE CENTER")
                 self.log("Robot/banner PNG error: " + str(e))
