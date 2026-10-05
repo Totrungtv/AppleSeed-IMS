@@ -94,6 +94,21 @@ class DriverManager:
                 return a.get("browser_download_url"), a.get("name")
         return None, None
 
+
+    def _flatten_ios_bundle(self):
+        """Đưa EXE/DLL phụ thuộc ra cùng thư mục ios-tools để Windows nạp được DLL."""
+        self.ios_tools.mkdir(parents=True, exist_ok=True)
+        for p in list(self.ios_tools.rglob("*")):
+            if not p.is_file() or p.parent == self.ios_tools:
+                continue
+            if p.suffix.lower() in (".exe", ".dll"):
+                dst = self.ios_tools / p.name
+                if not dst.exists():
+                    try:
+                        shutil.copy2(p, dst)
+                    except Exception:
+                        pass
+
     def ensure_ios(self):
         required = ["idevice_id.exe", "ideviceinfo.exe", "irecovery.exe"]
         if all((self.ios_tools / x).exists() for x in required):
@@ -106,7 +121,8 @@ class DriverManager:
                 return False, "Không tìm thấy gói Windows ZIP của libimobiledevice."
             self._download(url, tmp)
             self._extract_zip(tmp, self.ios_tools)
-            # Asset có thể chứa một thư mục cấp ngoài.
+            # Asset có thể chứa một thư mục cấp ngoài; gom cả EXE/DLL về root.
+            self._flatten_ios_bundle()
             for req in required:
                 dst = self.ios_tools / req
                 if not dst.exists():
@@ -122,6 +138,7 @@ class DriverManager:
                 fallback = "https://github.com/mass1ve-err0r/libimobiledevice-win64/archive/refs/heads/master.zip"
                 self._download(fallback, tmp)
                 self._extract_zip(tmp, self.ios_tools)
+                self._flatten_ios_bundle()
                 for req in required:
                     dst = self.ios_tools / req
                     if not dst.exists():
