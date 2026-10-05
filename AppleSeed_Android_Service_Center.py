@@ -91,6 +91,62 @@ class CallEvent(QEvent):
     def __init__(self,fn):
         super().__init__(QEvent.Type(CallEvent.TYPE)); self.fn=fn
 
+class AnimatedHero(QWidget):
+    """Banner động nhẹ: robot zoom/bob và có scan-line HUD, không cần GIF/video."""
+    def __init__(self, pixmap, parent=None):
+        super().__init__(parent)
+        self.pixmap = pixmap
+        self.phase = 0.0
+        self.setMinimumHeight(300)
+        self.setMaximumHeight(320)
+        self.setStyleSheet(
+            "background:#050a12;border:1px solid #1e293b;border-radius:14px;"
+        )
+        self.timer = QTimer(self)
+        self.timer.setInterval(45)
+        self.timer.timeout.connect(self._animate)
+        self.timer.start()
+
+    def _animate(self):
+        self.phase += 0.055
+        if self.phase > 6.283:
+            self.phase -= 6.283
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        p.fillRect(self.rect(), QColor("#050a12"))
+
+        if self.pixmap.isNull():
+            p.end()
+            return
+
+        import math
+        w = max(1, self.width())
+        h = max(1, self.height())
+
+        # 1.5% breathing/zoom: tạo cảm giác robot đang hoạt động.
+        scale = 1.0 + 0.014 * math.sin(self.phase)
+        draw_w = max(1, int(w * scale))
+        draw_h = max(1, int(h * scale))
+        x = (w - draw_w) // 2
+        y = (h - draw_h) // 2
+
+        p.drawPixmap(x, y, draw_w, draw_h, self.pixmap)
+
+        # HUD scan-line chạy ngang rất nhẹ.
+        scan = int((math.sin(self.phase * 0.72) * 0.5 + 0.5) * (h - 4)) + 2
+        pen = QPen(QColor(56, 189, 248, 95), 2)
+        p.setPen(pen)
+        p.drawLine(4, scan, w - 4, scan)
+
+        # Glow viền nhịp theo animation.
+        alpha = int(70 + 45 * (math.sin(self.phase) * 0.5 + 0.5))
+        p.setPen(QPen(QColor(56, 189, 248, alpha), 1))
+        p.drawRoundedRect(1, 1, w - 3, h - 3, 14, 14)
+        p.end()
+
 class AndroidTool(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -265,38 +321,20 @@ class AndroidTool(QMainWindow):
     def showout(self,w,title,text): self.post(lambda:(w.setPlainText(f"===== {title} =====\n\n{text}"),w.moveCursor(w.textCursor().End)))
 
     def robot_banner(self):
-        """Hiển thị ảnh robot/banner PNG mới trong assets."""
-        label = QLabel()
-        label.setAlignment(Qt.AlignCenter)
-        label.setMinimumHeight(250)
-        label.setMaximumHeight(320)
-        label.setScaledContents(False)
-        label.setStyleSheet("background:#050a12;border:1px solid #1e293b;border-radius:14px;")
+        """Banner robot động dùng PNG panoramic đã upload."""
         path = self.base / "assets" / "ChatGPT Image 23_07_17 5 thg 10, 2026.png"
-        if path.exists():
-            try:
-                pix = QPixmap(str(path))
-                if pix.isNull():
-                    raise RuntimeError("Không đọc được ảnh PNG")
-                # Let Qt stretch the already-loaded panoramic artwork to
-                # the actual QLabel size.  This is important because this
-                # method runs before the layout gets its final width; scaling
-                # here would otherwise use the temporary default width and
-                # leave large empty areas on the sides.
-                label.setPixmap(pix)
-                label.setScaledContents(True)
-                label.setSizePolicy(
-                    __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Expanding,
-                    __import__("PySide6.QtWidgets", fromlist=["QSizePolicy"]).QSizePolicy.Fixed
-                )
-                label.setMinimumHeight(300)
-                label.setMaximumHeight(320)
-            except Exception as e:
-                label.setText("APPLE SEED • SERVICE CENTER")
-                self.log("Robot/banner PNG error: " + str(e))
-        else:
-            label.setText("APPLE SEED • SERVICE CENTER")
-        return label
+        if not path.exists():
+            label = QLabel("APPLE SEED • SERVICE CENTER")
+            label.setAlignment(Qt.AlignCenter)
+            return label
+
+        pix = QPixmap(str(path))
+        if pix.isNull():
+            label = QLabel("APPLE SEED • SERVICE CENTER")
+            label.setAlignment(Qt.AlignCenter)
+            return label
+
+        return AnimatedHero(pix)
 
     def transfer_tab(self):
         """Trung tâm chuyển dữ liệu Android qua PC bằng ADB: máy cũ -> PC -> máy mới."""
