@@ -550,58 +550,21 @@ class AndroidTool(QMainWindow):
             return
         self.ios_devices.clear()
         try:
-            out = self._ios_run("idevice_id", ["-l"], timeout=10)
-            ids = [x.strip() for x in out.splitlines() if x.strip()]
+            out=self._ios_run("idevice_id",["-l"],timeout=10)
+            ids=[x.strip() for x in out.splitlines() if x.strip()]
             if ids:
                 for udid in ids:
-                    self.ios_devices.addItem(udid, udid)
-                self.ios_status.setText(f"iOS: {len(ids)} THIẾT BỊ")
-                self.ios_status.setStyleSheet("background:#064e3b;color:#bbf7d0;border-radius:9px;padding:9px 14px;font-weight:900")
-                self._ios_log("Đã phát hiện: " + ", ".join(ids))
+                    self.ios_devices.addItem(udid,udid)
+                self._ios_log("✓ Đã phát hiện "+str(len(ids))+" thiết bị: "+", ".join(ids))
+                if hasattr(self,"ios_mode"):
+                    self.ios_mode.setText("Normal")
+                self.ios_progress.setValue(100)
             else:
-                self.ios_status.setText("iOS: CHƯA KẾT NỐI")
-                self.ios_status.setStyleSheet("background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900")
-                self._ios_log("Không thấy iPhone/iPad ở chế độ Normal.")
+                self._ios_log("⚠ Không thấy iPhone/iPad ở chế độ Normal.")
+                self.ios_progress.setValue(0)
         except Exception as e:
-            self.ios_status.setText("iOS: CHƯA CÓ TOOL")
-            self.ios_status.setStyleSheet("background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900")
-            self.ios_info.setPlainText(
-                "APPLE SEED iOS\n\n"
-                "Chưa tìm thấy bộ công cụ iOS.\n"
-                "Đặt idevice_id.exe, ideviceinfo.exe và irecovery.exe vào:\n"
-                + str(self.base / "ios-tools") +
-                "\n\nSau đó bấm QUÉT iOS."
-            )
-            self._ios_log("⚠ " + str(e))
-
-    def ios_device_info(self):
-        try:
-            udid = self.ios_devices.currentData()
-            args = ["-u", str(udid)] if udid else []
-            out = self._ios_run("ideviceinfo", args, timeout=20)
-            self.ios_info.setPlainText(out or "Không có thông tin.")
-            self._ios_log("Đọc thông tin iOS thành công.")
-        except Exception as e:
-            self.ios_info.setPlainText("Không đọc được thông tin iOS.\n\n" + str(e))
-            self._ios_log("❌ " + str(e))
-
-    def ios_probe_mode(self, mode, tool, args):
-        try:
-            out = self._ios_run(tool, args, timeout=15)
-            self.ios_info.setPlainText(f"===== {mode.upper()} =====\n\n{out or '(không có dữ liệu)'}")
-            self._ios_log(f"{mode}: OK")
-        except Exception as e:
-            self.ios_info.setPlainText(f"===== {mode.upper()} =====\n\n" + str(e))
-            self._ios_log(f"{mode}: {e}")
-
-    def ios_action_info(self, action):
-        labels = {
-            "backup": "Backup iOS sẽ được triển khai bằng engine libimobiledevice/Apple tương thích.",
-            "restore": "Restore có thể xoá dữ liệu và chỉ nên bật sau khi có engine/firmware hợp lệ.",
-            "firmware": "Firmware/iPSW cần engine restore tương thích và kiểm tra thiết bị trước khi chạy."
-        }
-        self.ios_info.setPlainText("===== iOS SERVICE =====\n\n" + labels[action])
-        self._ios_log(labels[action])
+            self._ios_log("⚠ iOS engine: "+str(e))
+            self.ios_progress.setValue(0)
 
     def transfer_tab(self):
         """Phone Transfer Center — giao diện sáng, rõ ràng, lấy cảm hứng từ workflow MobileTrans."""
