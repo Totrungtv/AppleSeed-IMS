@@ -457,8 +457,32 @@ class AndroidTool(QMainWindow):
             "Chuyển toàn bộ bộ nhớ dùng chung /sdcard của máy cũ sang máy mới?\n\n"
             "Có thể mất nhiều thời gian và cần rất nhiều dung lượng PC/máy mới."):
             return
-        folders=["/"]
-        self.threaded(lambda:self._transfer_pull_push(src,dst,folders,"CHUYỂN TOÀN BỘ /sdcard"))
+
+        def w():
+            work=self.base/"backups"/"transfers"/f"{src}_to_{dst}_{time.strftime('%Y%m%d_%H%M%S')}"
+            local=work/"sdcard"; local.mkdir(parents=True,exist_ok=True)
+            try:
+                self._volte_progress(5,"Đang lấy toàn bộ /sdcard về PC")
+                rc,out=self.run(["-s",src,"pull","/sdcard/.",str(local)],3600)
+                if rc!=0:
+                    raise RuntimeError("PULL /sdcard thất bại: "+(out or "ADB error"))
+                self._volte_progress(60,"Đang chép toàn bộ dữ liệu sang máy mới")
+                self.run(["-s",dst,"shell","mkdir","-p","/sdcard"],30)
+                rc2,out2=self.run(["-s",dst,"push",str(local)+"/.","/sdcard/"],3600)
+                if rc2!=0:
+                    raise RuntimeError("PUSH /sdcard thất bại: "+(out2 or "ADB error"))
+                self._volte_progress(100,"Chuyển toàn bộ hoàn tất")
+                self.showout(self.transfer_out,"CHUYỂN TOÀN BỘ /sdcard",
+                    f"Đã chuyển toàn bộ dữ liệu dùng chung.\n\nPC staging:\n{work}")
+                self.post(lambda:QMessageBox.information(
+                    self,"Apple Seed — Chuyển dữ liệu",
+                    "Đã chuyển toàn bộ /sdcard sang máy mới.\n\nPC staging:\n"+str(work)
+                ))
+            except Exception as e:
+                self._volte_progress(0,"Chuyển toàn bộ lỗi")
+                self.showout(self.transfer_out,"CHUYỂN TOÀN BỘ /sdcard","❌ LỖI: "+str(e))
+                self.post(lambda e=str(e):QMessageBox.warning(self,"Chuyển toàn bộ lỗi",e))
+        self.threaded(w)
 
     def transfer_backup_pc(self):
         src=self._transfer_serial(self.transfer_source)
@@ -500,7 +524,9 @@ class AndroidTool(QMainWindow):
                     self._volte_progress(int(idx/len(folders)*100),f"Restore {sub}")
                     target="/sdcard/"+sub
                     self.run(["-s",dst,"shell","mkdir","-p",target],30)
-                    self.run(["-s",dst,"push",str(local),"/sdcard"],1800)
+                    rc_push,out_push=self.run(["-s",dst,"push",str(local)+"/.",target],1800)
+                    if rc_push!=0:
+                        raise RuntimeError(f"Restore {sub} thất bại: "+(out_push or "ADB error"))
                 self._volte_progress(100,"Restore PC hoàn tất")
                 self.showout(self.transfer_out,"RESTORE ANDROID TỪ PC",f"Đã khôi phục vào máy mới:\n{dst}")
                 self.post(lambda:QMessageBox.information(self,"Restore PC","Đã khôi phục dữ liệu vào máy mới."))
