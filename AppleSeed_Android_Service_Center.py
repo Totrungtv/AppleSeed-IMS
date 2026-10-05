@@ -1,6 +1,7 @@
 import os, sys, time, shutil, subprocess, threading, tempfile, zipfile, urllib.request, json
 from pathlib import Path
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QFont, QPainterPath
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QFont, QPainterPath, QImage
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import Qt, QEvent, QTimer
 from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar,QSplashScreen
 
@@ -262,9 +263,35 @@ class AndroidTool(QMainWindow):
     def log(self,s): self.post(lambda:self.logbox.append(f"[{time.strftime('%H:%M:%S')}] {s}"))
     def showout(self,w,title,text): self.post(lambda:(w.setPlainText(f"===== {title} =====\n\n{text}"),w.moveCursor(w.textCursor().End)))
 
+    def robot_banner(self):
+        """Hiển thị robot Apple Seed tương lai từ assets/apple_seed_robot.svg."""
+        label = QLabel()
+        label.setAlignment(Qt.AlignCenter)
+        label.setMinimumHeight(250)
+        label.setMaximumHeight(320)
+        label.setStyleSheet("background:#050a12;border:1px solid #1e293b;border-radius:14px;")
+        path = self.base / "assets" / "apple_seed_robot.svg"
+        if path.exists():
+            try:
+                renderer = QSvgRenderer(str(path))
+                image = QImage(1200, 520, QImage.Format_ARGB32)
+                image.fill(Qt.transparent)
+                painter = QPainter(image)
+                renderer.render(painter)
+                painter.end()
+                pix = QPixmap.fromImage(image)
+                label.setPixmap(pix.scaled(1180, 510, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            except Exception as e:
+                label.setText("APPLE SEED • FUTURE SERVICE ROBOT")
+                self.log("Robot banner error: " + str(e))
+        else:
+            label.setText("APPLE SEED • FUTURE SERVICE ROBOT")
+        return label
+
     def home_tab(self):
         w=QWidget(); l=QVBoxLayout(w)
         t=QLabel("BẢNG ĐIỀU KHIỂN"); t.setStyleSheet("font-size:21pt;font-weight:800"); l.addWidget(t)
+        l.addWidget(self.robot_banner())
         row=QHBoxLayout(); self.cards=[]
         for title,val in [("THIẾT BỊ","—"),("ANDROID","—"),("SOC","—"),("ADB","—")]:
             f=QFrame(); f.setObjectName("card"); q=QVBoxLayout(f); lab=QLabel(title); lab.setObjectName("muted"); q.addWidget(lab); v=QLabel(val); v.setStyleSheet("font-size:15pt;font-weight:800;color:#38bdf8"); q.addWidget(v); f.val=v; self.cards.append(f); row.addWidget(f)
