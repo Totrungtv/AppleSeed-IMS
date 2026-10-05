@@ -270,6 +270,7 @@ class AndroidTool(QMainWindow):
         label.setAlignment(Qt.AlignCenter)
         label.setMinimumHeight(250)
         label.setMaximumHeight(320)
+        label.setScaledContents(False)
         label.setStyleSheet("background:#050a12;border:1px solid #1e293b;border-radius:14px;")
         path = self.base / "assets" / "c266ea01-9dca-4b83-8985-a1435ad15d97.png"
         if path.exists():
@@ -277,11 +278,17 @@ class AndroidTool(QMainWindow):
                 pix = QPixmap(str(path))
                 if pix.isNull():
                     raise RuntimeError("Không đọc được ảnh PNG")
-                # Fit the complete banner inside the card.
-                # Do NOT scale to a height larger than the QLabel: otherwise
-                # the top/bottom of the PNG gets clipped by the widget.
+                # Full-width dashboard banner: fill the entire card so there
+                # is no empty space on either side.  IgnoreAspectRatio is
+                # intentional because the uploaded artwork is a portrait-ish
+                # composition while the dashboard banner is ultra-wide.
                 label.setPixmap(
-                    pix.scaled(1180, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    pix.scaled(
+                        max(1, label.width() - 2),
+                        max(1, label.height() - 2),
+                        Qt.IgnoreAspectRatio,
+                        Qt.SmoothTransformation
+                    )
                 )
             except Exception as e:
                 label.setText("APPLE SEED • SERVICE CENTER")
