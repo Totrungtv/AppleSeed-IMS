@@ -3,7 +3,7 @@ from pathlib import Path
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QFont, QPainterPath, QImage
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import Qt, QEvent, QTimer
-from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar,QSplashScreen
+from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar,QSplashScreen,QCheckBox
 
 APP="Apple Seed Android Service Center"
 VER="PySide6-1.1"
@@ -337,50 +337,93 @@ class AndroidTool(QMainWindow):
         return AnimatedHero(pix)
 
     def transfer_tab(self):
-        """Trung tâm chuyển dữ liệu Android qua PC bằng ADB: máy cũ -> PC -> máy mới."""
-        w=QWidget(); l=QVBoxLayout(w)
+        """Phone Transfer Center — giao diện kiểu phần mềm chuyển máy chuyên nghiệp."""
+        w=QWidget(); l=QVBoxLayout(w); l.setSpacing(9)
 
-        title=QLabel("CHUYỂN DỮ LIỆU ANDROID")
-        title.setStyleSheet("font-size:21pt;font-weight:800")
+        title=QLabel("PHONE TRANSFER CENTER")
+        title.setStyleSheet("font-size:22pt;font-weight:800;color:#f8fafc")
         l.addWidget(title)
 
-        info=QLabel(
-            "Máy cũ → PC → máy mới • Không cần Internet • ADB trực tiếp. "
-            "Ưu tiên dữ liệu người dùng như DCIM, Pictures, Movies, Music, Download, Documents và Android/media."
+        sub=QLabel(
+            "Chuyển dữ liệu Android qua PC • USB/ADB • chọn dữ liệu • tự retry khi ADB chập chờn"
         )
-        info.setObjectName("muted")
-        info.setWordWrap(True)
-        l.addWidget(info)
+        sub.setObjectName("muted"); l.addWidget(sub)
 
-        card=QFrame(); card.setObjectName("card"); form=QGridLayout(card)
-        form.addWidget(QLabel("📱 MÁY CŨ / NGUỒN"),0,0)
-        self.transfer_source=QComboBox(); self.transfer_source.setMinimumWidth(420); form.addWidget(self.transfer_source,0,1)
-        form.addWidget(QLabel("📱 MÁY MỚI / ĐÍCH"),1,0)
-        self.transfer_target=QComboBox(); self.transfer_target.setMinimumWidth(420); form.addWidget(self.transfer_target,1,1)
-        l.addWidget(card)
+        devices=QHBoxLayout()
+        for label,attr in [("📱 MÁY CŨ / NGUỒN","transfer_source"),("📱 MÁY MỚI / ĐÍCH","transfer_target")]:
+            card=QFrame(); card.setObjectName("card"); q=QVBoxLayout(card)
+            lab=QLabel(label); lab.setStyleSheet("font-weight:800;color:#38bdf8")
+            q.addWidget(lab)
+            combo=QComboBox(); combo.setMinimumHeight(42); combo.setMinimumWidth(420)
+            setattr(self,attr,combo); q.addWidget(combo)
+            devices.addWidget(card,1)
+        l.addLayout(devices)
 
-        row=QHBoxLayout()
-        self.button(row,"↻ QUÉT THIẾT BỊ",self.refresh_transfer_devices,"primary")
-        self.button(row,"🔎 KIỂM TRA",self.check_transfer_devices)
-        self.button(row,"💾 SAO LƯU MÁY CŨ VÀO PC",self.transfer_backup_pc,"green")
-        self.button(row,"♻ KHÔI PHỤC TỪ PC",self.transfer_restore_pc,"green")
-        l.addLayout(row)
+        actions=QHBoxLayout()
+        self.button(actions,"↻ QUÉT 2 THIẾT BỊ",self.refresh_transfer_devices,"primary")
+        self.button(actions,"🔎 KIỂM TRA KẾT NỐI",self.check_transfer_devices)
+        self.button(actions,"↔ ĐỔI CHIỀU",self.swap_transfer_devices)
+        l.addLayout(actions)
 
-        row2=QHBoxLayout()
-        self.button(row2,"⚡ CHUYỂN DỮ LIỆU CƠ BẢN",self.transfer_basic,"primary")
-        self.button(row2,"📦 CHUYỂN TOÀN BỘ /sdcard",self.transfer_full,"red")
-        l.addLayout(row2)
+        data=QFrame(); data.setObjectName("card"); dl=QVBoxLayout(data)
+        head=QHBoxLayout()
+        h=QLabel("CHỌN DỮ LIỆU CẦN CHUYỂN"); h.setStyleSheet("font-size:12pt;font-weight:800")
+        head.addWidget(h); head.addStretch()
+        self.transfer_select_all=QCheckBox("CHỌN TẤT CẢ"); self.transfer_select_all.setChecked(True)
+        self.transfer_select_all.stateChanged.connect(self.toggle_transfer_checks)
+        head.addWidget(self.transfer_select_all); dl.addLayout(head)
 
-        note=QLabel(
-            "⚠ Android hiện đại không cho ADB đọc toàn bộ dữ liệu riêng của từng ứng dụng. "
-            "Chức năng này chuyển dữ liệu người dùng và Android/media; dữ liệu app riêng tư, "
-            "SMS, tài khoản và app data có thể cần tính năng backup/restore của chính ứng dụng hoặc quyền đặc biệt."
+        grid=QGridLayout(); self.transfer_checks={}
+        categories=[
+            ("📷 Ảnh / DCIM","DCIM"),("🖼 Pictures","Pictures"),
+            ("🎬 Video / Movies","Movies"),("🎵 Nhạc / Music","Music"),
+            ("📥 Download","Download"),("📄 Documents","Documents"),
+            ("📦 Android / media","Android/media")
+        ]
+        for i,(text,path) in enumerate(categories):
+            cb=QCheckBox(text); cb.setChecked(True); cb.setStyleSheet("padding:8px;font-weight:700")
+            self.transfer_checks[path]=cb; grid.addWidget(cb,i//3,i%3)
+        dl.addLayout(grid); l.addWidget(data)
+
+        buttons=QHBoxLayout()
+        self.button(buttons,"🚀 CHUYỂN DỮ LIỆU",self.transfer_selected,"primary")
+        self.button(buttons,"📦 CHUYỂN TOÀN BỘ /sdcard",self.transfer_full,"red")
+        self.button(buttons,"💾 BACKUP MÁY CŨ → PC",self.transfer_backup_pc,"green")
+        self.button(buttons,"♻ RESTORE PC → MÁY MỚI",self.transfer_restore_pc,"green")
+        l.addLayout(buttons)
+
+        status=QLabel(
+            "✓ Dữ liệu được đi qua PC staging để giảm lỗi kết nối. "
+            "Không xóa dữ liệu máy mới mặc định. App-private/SMS/tài khoản phụ thuộc quyền Android và hãng."
         )
-        note.setObjectName("muted"); note.setWordWrap(True); l.addWidget(note)
+        status.setObjectName("muted"); status.setWordWrap(True); l.addWidget(status)
 
         self.transfer_out=QTextEdit(); self.transfer_out.setReadOnly(True); l.addWidget(self.transfer_out,1)
         QTimer.singleShot(300,self.refresh_transfer_devices)
         return w
+
+    def swap_transfer_devices(self):
+        a=self.transfer_source.currentIndex(); b=self.transfer_target.currentIndex()
+        if a<0 or b<0:return
+        self.transfer_source.setCurrentIndex(b)
+        self.transfer_target.setCurrentIndex(a)
+
+    def toggle_transfer_checks(self,state):
+        checked=bool(state)
+        for cb in self.transfer_checks.values():
+            cb.blockSignals(True); cb.setChecked(checked); cb.blockSignals(False)
+
+    def transfer_selected(self):
+        src,dst=self._transfer_pair()
+        if not src or not dst:return
+        folders=[p for p,cb in self.transfer_checks.items() if cb.isChecked()]
+        if not folders:
+            QMessageBox.warning(self,"Phone Transfer","Chưa chọn loại dữ liệu."); return
+        names=", ".join(folders)
+        if not self.ask("XÁC NHẬN CHUYỂN DỮ LIỆU",
+            "Chuyển các nhóm sau từ máy cũ sang máy mới?\n\n"+names):
+            return
+        self.threaded(lambda:self._transfer_pull_push(src,dst,folders,"PHONE TRANSFER"))
 
     def _transfer_serial(self, combo):
         i=combo.currentIndex()
@@ -456,37 +499,86 @@ class AndroidTool(QMainWindow):
         work=self.base/"backups"/"transfers"/f"{src}_to_{dst}_{time.strftime('%Y%m%d_%H%M%S')}"
         work.mkdir(parents=True,exist_ok=True)
         copied=[]; errors=[]
+
+        def transfer_cmd(args, timeout=1800):
+            rc,out=self.run(args,timeout)
+            low=(out or "").lower()
+            if rc!=0 and any(x in low for x in ("eof","device not found","connection reset","closed")):
+                self.run(["kill-server"],10)
+                self.run(["start-server"],10)
+                time.sleep(1)
+                rc,out=self.run(args,timeout)
+            return rc,out
+
         try:
-            self._volte_progress(5,"Chuẩn bị chuyển dữ liệu")
+            self._volte_progress(5,"Kiểm tra kết nối 2 thiết bị")
+            for serial in (src,dst):
+                rc,out=self.run(["-s",serial,"shell","echo","APPLESEED_OK"],15)
+                if rc!=0 or "APPLESEED_OK" not in out:
+                    raise RuntimeError(f"Thiết bị {serial} mất kết nối ADB: {out}")
+
             for idx,folder in enumerate(folders,1):
-                local=work/folder.strip("/").replace("/","_")
-                local.mkdir(parents=True,exist_ok=True)
-                remote="/sdcard/"+folder.strip("/")
-                self._volte_progress(min(75,5+idx*10),f"Đang lấy {remote}")
-                rc,out=self.run(["-s",src,"pull",remote,str(local)],1800)
-                if rc!=0:
-                    errors.append(f"PULL {remote}: {out}")
+                name=folder.strip("/")
+                remote="/sdcard/"+name
+                local_parent=work
+                local_path=work / name
+
+                self._volte_progress(
+                    min(75,5+idx*9),
+                    f"Đang sao lưu {remote} → PC"
+                )
+
+                # Pull into the staging ROOT, not a pre-created folder.
+                # This avoids Pictures/Pictures and Movies/Movies nesting.
+                if local_path.exists():
+                    shutil.rmtree(local_path,ignore_errors=True)
+                local_parent.mkdir(parents=True,exist_ok=True)
+
+                rc,out=transfer_cmd(
+                    ["-s",src,"pull",remote,str(local_parent)],1800
+                )
+                if rc!=0 or not local_path.exists():
+                    errors.append(f"PULL {remote}: {out or 'không có dữ liệu'}")
                     continue
-                self._volte_progress(min(90,15+idx*10),f"Đang chép {folder} sang máy mới")
-                target="/sdcard/"+folder.strip("/")
-                self.run(["-s",dst,"shell","mkdir","-p",target],30)
-                rc2,out2=self.run(["-s",dst,"push",str(local)+"/.",target],1800)
+
+                self._volte_progress(
+                    min(92,15+idx*10),
+                    f"Đang khôi phục {remote} → máy mới"
+                )
+
+                parent="/sdcard/"+str(Path(name).parent).replace("\","/")
+                if parent in ("/sdcard","."):
+                    parent="/sdcard"
+                self.run(["-s",dst,"shell","mkdir","-p",parent],30)
+
+                rc2,out2=transfer_cmd(
+                    ["-s",dst,"push",str(local_path),parent],1800
+                )
                 if rc2!=0:
-                    errors.append(f"PUSH {target}: {out2}")
+                    errors.append(f"PUSH {remote}: {out2}")
                 else:
                     copied.append(folder)
+
             self._volte_progress(100,"Chuyển dữ liệu hoàn tất")
-            report=["===== APPLE SEED — "+title+" =====","",f"Nguồn: {src}",f"Đích: {dst}",f"PC staging: {work}","",
-                    "ĐÃ CHUYỂN: "+(", ".join(copied) if copied else "không có")]
-            if errors: report += ["","LỖI / BỎ QUA:"]+errors
+            report=[
+                "===== APPLE SEED — "+title+" =====","",
+                f"Nguồn: {src}",f"Đích: {dst}",
+                f"PC staging: {work}","",
+                "✓ ĐÃ CHUYỂN: "+(", ".join(copied) if copied else "không có")
+            ]
+            if errors:
+                report += ["","⚠ LỖI / BỎ QUA:"]+errors
             self.showout(self.transfer_out,title,"\n".join(report))
             self.log("✅ "+title+" hoàn tất. PC staging: "+str(work))
-            self.post(lambda:QMessageBox.information(self,"Apple Seed — Chuyển dữ liệu",
-                "Đã hoàn tất chuyển dữ liệu.\n\nDữ liệu tạm được giữ tại:\n"+str(work)))
+            self.post(lambda:QMessageBox.information(
+                self,"Apple Seed — Phone Transfer",
+                "Đã hoàn tất.\n\nPC staging:\n"+str(work)+
+                ("\n\nCó mục lỗi, xem báo cáo trong khung log." if errors else "")
+            ))
         except Exception as e:
             self._volte_progress(0,"Chuyển dữ liệu lỗi")
             self.showout(self.transfer_out,title,"❌ LỖI: "+str(e))
-            self.post(lambda e=str(e):QMessageBox.warning(self,"Chuyển dữ liệu lỗi",e))
+            self.post(lambda e=str(e):QMessageBox.warning(self,"Phone Transfer lỗi",e))
 
     def transfer_basic(self):
         src,dst=self._transfer_pair()
