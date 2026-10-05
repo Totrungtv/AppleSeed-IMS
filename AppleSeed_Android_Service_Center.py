@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QFont, QPainterPath, QImage
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import Qt, QEvent, QTimer
+from driver_manager import DriverManager
 from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar,QSplashScreen,QCheckBox
 
 APP="Apple Seed Android Service Center"
@@ -151,6 +152,7 @@ class AndroidTool(QMainWindow):
     def __init__(self):
         super().__init__()
         self.base=Path(__file__).resolve().parent
+        self.driver_manager=DriverManager(self.base)
         self.adb=self.find_adb()
         self.scrcpy=self.find_scrcpy()
         self.scrcpy_proc=None
@@ -164,6 +166,8 @@ class AndroidTool(QMainWindow):
         self.setStyleSheet(self.qss())
         self.build()
         self.refresh_devices()
+        # Tự kiểm tra/nạp engine Android + iOS khi thiếu.
+        QTimer.singleShot(700, self.auto_load_drivers)
 
         # Theo dõi ADB để sau khi điện thoại reboot/reconnect, Apple Seed
         # tự khởi động lại Shizuku mà không cần bấm nút.
@@ -234,6 +238,27 @@ class AndroidTool(QMainWindow):
         x=QPushButton(text); x.clicked.connect(lambda checked=False, b=x, f=fn: (b.setEnabled(False), self.status.showMessage("⏳ "+b.text()+" ..."), f(), b.setEnabled(True)))
         if kind:x.setObjectName(kind)
         layout.addWidget(x); return x
+
+    def auto_load_drivers(self):
+        """Tự tải bộ công cụ Android/iOS khi máy khách chưa có."""
+        def worker():
+            a_ok,a_msg,i_ok,i_msg=self.driver_manager.ensure_all()
+            self.post(lambda: self._finish_driver_load(a_ok,a_msg,i_ok,i_msg))
+        threading.Thread(target=worker,daemon=True).start()
+        self.status.showMessage("⏳ Đang kiểm tra Android/iOS engine...")
+
+    def _finish_driver_load(self,a_ok,a_msg,i_ok,i_msg):
+        self.adb=self.find_adb()
+        self.scrcpy=self.find_scrcpy()
+        self._driver_android_ok=a_ok
+        self._driver_ios_ok=i_ok
+        self.log("ANDROID ENGINE: "+a_msg)
+        self.log("iOS ENGINE: "+i_msg)
+        if self.adb:
+            self.refresh_devices()
+        if hasattr(self,"ios_devices"):
+            self.refresh_ios_devices()
+        self.status.showMessage(("✅ Driver/engine sẵn sàng" if (a_ok and i_ok) else "⚠ Đã kiểm tra driver/engine — xem Nhật ký"),6000)
 
     def find_scrcpy(self):
         # Tìm scrcpy đi kèm Apple Seed trước, sau đó mới dùng bản cài trong PATH.
