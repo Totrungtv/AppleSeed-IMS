@@ -337,68 +337,147 @@ class AndroidTool(QMainWindow):
         return AnimatedHero(pix)
 
     def transfer_tab(self):
-        """Phone Transfer Center — giao diện kiểu phần mềm chuyển máy chuyên nghiệp."""
-        w=QWidget(); l=QVBoxLayout(w); l.setSpacing(9)
+        """Phone Transfer Center — UI lấy cảm hứng từ MobileTrans nhưng dùng engine ADB của Apple Seed."""
+        w=QWidget()
+        w.setObjectName("transferPage")
+        w.setStyleSheet("""
+            QWidget#transferPage{background:#eef6ff;border-radius:14px}
+            QFrame#transferSide{background:#f8fbff;border:1px solid #dbeafe;border-radius:14px}
+            QFrame#transferPanel{background:#ffffff;border:1px solid #dbeafe;border-radius:16px}
+            QLabel#transferTitle{color:#0f2747;font-size:22pt;font-weight:800}
+            QLabel#transferSub{color:#64748b;font-size:10pt}
+            QLabel#transferSection{color:#17365d;font-weight:800;font-size:11pt}
+            QLabel#transferMuted{color:#64748b}
+            QLabel#phoneName{color:#17365d;font-size:11pt;font-weight:800}
+            QLabel#phoneHint{color:#64748b;font-size:9pt}
+            QComboBox#transferDevice{background:#f8fbff;border:1px solid #cbd5e1;border-radius:9px;padding:9px;color:#17365d}
+            QCheckBox{color:#334155;font-size:10pt;padding:5px}
+            QCheckBox::indicator{width:19px;height:19px}
+            QPushButton#transferNav{background:transparent;color:#64748b;border:0;text-align:left;padding:10px 12px;border-radius:9px;font-weight:700}
+            QPushButton#transferNav:hover{background:#e0edff;color:#2563eb}
+            QPushButton#transferNavActive{background:#dbeafe;color:#2563eb;border:0;text-align:left;padding:10px 12px;border-radius:9px;font-weight:800}
+            QPushButton#transferScan{background:#e8f2ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:9px 14px;font-weight:800}
+            QPushButton#transferScan:hover{background:#dbeafe}
+            QPushButton#transferStart{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #06b6d4,stop:.55 #2563eb,stop:1 #d946ef);color:white;border:0;border-radius:11px;padding:13px 26px;font-size:12pt;font-weight:900}
+            QPushButton#transferStart:hover{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0891b2,stop:.55 #1d4ed8,stop:1 #c026d3)}
+            QPushButton#transferSecondary{background:#ffffff;color:#2563eb;border:1px solid #bfdbfe;border-radius:9px;padding:9px 14px;font-weight:800}
+            QFrame#phoneCard{background:#f3f8ff;border:1px solid #dbeafe;border-radius:16px}
+            QFrame#phoneVisual{background:#07182c;border:3px solid #93c5fd;border-radius:25px}
+            QLabel#phoneGlyph{color:#60a5fa;font-size:42pt}
+            QFrame#dataPanel{background:#ffffff;border:1px solid #dbeafe;border-radius:16px}
+            QLabel#dataInfo{color:#64748b;font-size:9pt}
+        """)
+        root=QHBoxLayout(w); root.setContentsMargins(14,14,14,14); root.setSpacing(12)
 
-        title=QLabel("PHONE TRANSFER CENTER")
-        title.setStyleSheet("font-size:22pt;font-weight:800;color:#f8fafc")
-        l.addWidget(title)
+        # Sidebar — bố cục gần MobileTrans nhưng giữ phong cách Apple Seed.
+        side=QFrame(); side.setObjectName("transferSide"); side.setFixedWidth(205)
+        sl=QVBoxLayout(side); sl.setContentsMargins(14,16,14,14); sl.setSpacing(5)
+        brand=QLabel("🍎 Apple Seed")
+        brand.setStyleSheet("color:#102a43;font-size:15pt;font-weight:900")
+        sl.addWidget(brand)
+        ai=QLabel("ANDROID TRANSFER")
+        ai.setStyleSheet("color:#8b5cf6;font-weight:900;font-size:8pt")
+        sl.addWidget(ai); sl.addSpacing(10)
+        sec=QLabel("App Transfer"); sec.setObjectName("transferSection"); sl.addWidget(sec)
+        for txt in ("▣  WhatsApp","▣  Zalo","▣  LINE","▦  Ứng dụng khác"):
+            b=QPushButton(txt); b.setObjectName("transferNav"); b.setEnabled(False); sl.addWidget(b)
+        sec2=QLabel("Phone Transfer"); sec2.setObjectName("transferSection"); sl.addSpacing(12); sl.addWidget(sec2)
+        b=QPushButton("📱  Phone to Phone"); b.setObjectName("transferNavActive"); sl.addWidget(b)
+        for txt in ("💻  Phone to PC","📦  App to App","▦  Home Screen"):
+            b=QPushButton(txt); b.setObjectName("transferNav"); b.setEnabled(False); sl.addWidget(b)
+        sec3=QLabel("Backup & Restore"); sec3.setObjectName("transferSection"); sl.addSpacing(12); sl.addWidget(sec3)
+        for txt in ("💾  Backup Android","♻  Restore Android"):
+            b=QPushButton(txt); b.setObjectName("transferNav"); b.setEnabled(False); sl.addWidget(b)
+        sl.addStretch()
+        tip=QLabel("Apple Seed Transfer\nADB • USB • PC staging")
+        tip.setStyleSheet("background:#eef6ff;color:#64748b;border-radius:10px;padding:10px;font-size:8pt")
+        sl.addWidget(tip)
+        root.addWidget(side)
 
-        sub=QLabel(
-            "Chuyển dữ liệu Android qua PC • USB/ADB • chọn dữ liệu • tự retry khi ADB chập chờn"
-        )
-        sub.setObjectName("muted"); l.addWidget(sub)
+        body=QVBoxLayout(); body.setSpacing(10)
+        top=QHBoxLayout()
+        title=QLabel("Phone Transfer"); title.setObjectName("transferTitle"); top.addWidget(title)
+        top.addStretch()
+        scan=QPushButton("↻  Scan devices"); scan.setObjectName("transferScan"); scan.clicked.connect(self.refresh_transfer_devices); top.addWidget(scan)
+        body.addLayout(top)
+        sub=QLabel("Transfer photos, videos, music and documents from your old Android to your new Android.")
+        sub.setObjectName("transferSub"); body.addWidget(sub)
 
-        devices=QHBoxLayout()
-        for label,attr in [("📱 MÁY CŨ / NGUỒN","transfer_source"),("📱 MÁY MỚI / ĐÍCH","transfer_target")]:
-            card=QFrame(); card.setObjectName("card"); q=QVBoxLayout(card)
-            lab=QLabel(label); lab.setStyleSheet("font-weight:800;color:#38bdf8")
-            q.addWidget(lab)
-            combo=QComboBox(); combo.setMinimumHeight(42); combo.setMinimumWidth(420)
+        # Thanh tab mô phỏng Transfer / Transfer & Merge / Backup.
+        modes=QHBoxLayout(); modes.setSpacing(4)
+        for i,txt in enumerate(("Transfer","Transfer & Merge","Backup / Restore")):
+            b=QPushButton(txt)
+            b.setObjectName("transferNavActive" if i==0 else "transferNav")
+            if i>0:b.setEnabled(False)
+            modes.addWidget(b)
+        modes.addStretch(); body.addLayout(modes)
+
+        content=QHBoxLayout(); content.setSpacing(12)
+
+        center=QFrame(); center.setObjectName("transferPanel"); cl=QVBoxLayout(center); cl.setContentsMargins(16,16,16,16)
+        cards=QHBoxLayout(); cards.setSpacing(10)
+
+        def phone_card(title,attr):
+            card=QFrame(); card.setObjectName("phoneCard"); q=QVBoxLayout(card); q.setContentsMargins(12,12,12,12)
+            lab=QLabel(title); lab.setObjectName("phoneName"); lab.setAlignment(Qt.AlignCenter); q.addWidget(lab)
+            visual=QFrame(); visual.setObjectName("phoneVisual"); visual.setFixedSize(142,210)
+            vl=QVBoxLayout(visual); vl.setContentsMargins(8,8,8,8)
+            icon=QLabel("▯"); icon.setObjectName("phoneGlyph"); icon.setAlignment(Qt.AlignCenter); vl.addWidget(icon)
+            hint=QLabel("Please connect\nAndroid via USB"); hint.setObjectName("phoneHint"); hint.setAlignment(Qt.AlignCenter); vl.addWidget(hint)
+            q.addWidget(visual,0,Qt.AlignCenter)
+            combo=QComboBox(); combo.setObjectName("transferDevice"); combo.setMinimumHeight(40); combo.setPlaceholderText("Please connect")
             setattr(self,attr,combo); q.addWidget(combo)
-            devices.addWidget(card,1)
-        l.addLayout(devices)
+            return card
+
+        cards.addWidget(phone_card("SOURCE • MÁY CŨ","transfer_source"),1)
+        arrow=QLabel("⇄"); arrow.setStyleSheet("color:#2563eb;font-size:30pt;font-weight:900"); arrow.setAlignment(Qt.AlignCenter); cards.addWidget(arrow,0,Qt.AlignCenter)
+        cards.addWidget(phone_card("DESTINATION • MÁY MỚI","transfer_target"),1)
+        cl.addLayout(cards)
 
         actions=QHBoxLayout()
-        self.button(actions,"↻ QUÉT 2 THIẾT BỊ",self.refresh_transfer_devices,"primary")
-        self.button(actions,"🔎 KIỂM TRA KẾT NỐI",self.check_transfer_devices)
-        self.button(actions,"↔ ĐỔI CHIỀU",self.swap_transfer_devices)
-        l.addLayout(actions)
+        check=QPushButton("🔎  Check connection"); check.setObjectName("transferSecondary"); check.clicked.connect(self.check_transfer_devices); actions.addWidget(check)
+        swap=QPushButton("⇄  Swap"); swap.setObjectName("transferSecondary"); swap.clicked.connect(self.swap_transfer_devices); actions.addWidget(swap)
+        actions.addStretch()
+        body_note=QLabel("✓ No data is deleted on destination by default")
+        body_note.setStyleSheet("color:#16a34a;font-weight:700")
+        actions.addWidget(body_note); cl.addLayout(actions)
+        content.addWidget(center,3)
 
-        data=QFrame(); data.setObjectName("card"); dl=QVBoxLayout(data)
-        head=QHBoxLayout()
-        h=QLabel("CHỌN DỮ LIỆU CẦN CHUYỂN"); h.setStyleSheet("font-size:12pt;font-weight:800")
-        head.addWidget(h); head.addStretch()
-        self.transfer_select_all=QCheckBox("CHỌN TẤT CẢ"); self.transfer_select_all.setChecked(True)
-        self.transfer_select_all.stateChanged.connect(self.toggle_transfer_checks)
-        head.addWidget(self.transfer_select_all); dl.addLayout(head)
-
-        grid=QGridLayout(); self.transfer_checks={}
+        data=QFrame(); data.setObjectName("dataPanel"); data.setFixedWidth(300); dl=QVBoxLayout(data); dl.setContentsMargins(16,16,16,16)
+        dh=QHBoxLayout(); dt=QLabel("Data to transfer"); dt.setObjectName("transferSection"); dh.addWidget(dt); dh.addStretch()
+        self.transfer_select_all=QCheckBox("All"); self.transfer_select_all.setChecked(True); self.transfer_select_all.stateChanged.connect(self.toggle_transfer_checks); dh.addWidget(self.transfer_select_all)
+        dl.addLayout(dh)
+        self.transfer_checks={}
         categories=[
-            ("📷 Ảnh / DCIM","DCIM"),("🖼 Pictures","Pictures"),
-            ("🎬 Video / Movies","Movies"),("🎵 Nhạc / Music","Music"),
-            ("📥 Download","Download"),("📄 Documents","Documents"),
-            ("📦 Android / media","Android/media")
+            ("📷  Photos / DCIM","DCIM"),("🖼  Pictures","Pictures"),
+            ("🎬  Videos / Movies","Movies"),("🎵  Music","Music"),
+            ("📥  Downloads","Download"),("📄  Documents","Documents"),
+            ("📦  Android / media","Android/media")
         ]
-        for i,(text,path) in enumerate(categories):
-            cb=QCheckBox(text); cb.setChecked(True); cb.setStyleSheet("padding:8px;font-weight:700")
-            self.transfer_checks[path]=cb; grid.addWidget(cb,i//3,i%3)
-        dl.addLayout(grid); l.addWidget(data)
+        for text,path in categories:
+            cb=QCheckBox(text); cb.setChecked(True); self.transfer_checks[path]=cb; dl.addWidget(cb)
+        dl.addStretch()
+        info=QLabel("ⓘ Select only the data you need for faster and safer transfer.")
+        info.setObjectName("dataInfo"); info.setWordWrap(True); dl.addWidget(info)
+        content.addWidget(data,0)
+        body.addLayout(content,1)
 
-        buttons=QHBoxLayout()
-        self.button(buttons,"🚀 CHUYỂN DỮ LIỆU",self.transfer_selected,"primary")
-        self.button(buttons,"📦 CHUYỂN TOÀN BỘ /sdcard",self.transfer_full,"red")
-        self.button(buttons,"💾 BACKUP MÁY CŨ → PC",self.transfer_backup_pc,"green")
-        self.button(buttons,"♻ RESTORE PC → MÁY MỚI",self.transfer_restore_pc,"green")
-        l.addLayout(buttons)
+        bottom=QHBoxLayout()
+        helpb=QPushButton("Cannot recognize the device?"); helpb.setObjectName("transferNav"); bottom.addWidget(helpb)
+        bottom.addStretch()
+        ai2=QLabel("✦ AI-powered transfer")
+        ai2.setStyleSheet("color:#8b5cf6;font-weight:800")
+        bottom.addWidget(ai2)
+        self.transfer_ai=QCheckBox(); self.transfer_ai.setChecked(True); bottom.addWidget(self.transfer_ai)
+        startb=QPushButton("✦  START")
+        startb.setObjectName("transferStart"); startb.setMinimumWidth(270); startb.clicked.connect(self.transfer_selected); bottom.addWidget(startb)
+        body.addLayout(bottom)
 
-        status=QLabel(
-            "✓ Dữ liệu được đi qua PC staging để giảm lỗi kết nối. "
-            "Không xóa dữ liệu máy mới mặc định. App-private/SMS/tài khoản phụ thuộc quyền Android và hãng."
-        )
-        status.setObjectName("muted"); status.setWordWrap(True); l.addWidget(status)
+        out=QTextEdit(); out.setReadOnly(True); out.setMaximumHeight(125)
+        out.setStyleSheet("background:#f8fbff;color:#334155;border:1px solid #dbeafe;border-radius:10px;font-family:Consolas")
+        self.transfer_out=out; body.addWidget(out)
 
-        self.transfer_out=QTextEdit(); self.transfer_out.setReadOnly(True); l.addWidget(self.transfer_out,1)
+        root.addLayout(body,1)
         QTimer.singleShot(300,self.refresh_transfer_devices)
         return w
 
