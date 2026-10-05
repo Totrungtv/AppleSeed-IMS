@@ -428,7 +428,7 @@ class AndroidTool(QMainWindow):
         device.setObjectName("iosCard")
         dl = QVBoxLayout(device)
         dl.setContentsMargins(16, 16, 16, 16)
-        dl.addWidget(QLabel("THIẾT BỊ iOS", objectName="iosSection"))
+        sec = QLabel("THIẾT BỊ iOS"); sec.setObjectName("iosSection"); dl.addWidget(sec)
         self.ios_devices = QComboBox()
         self.ios_devices.setMinimumHeight(40)
         self.ios_devices.setPlaceholderText("Chưa phát hiện iPhone / iPad")
@@ -449,7 +449,7 @@ class AndroidTool(QMainWindow):
         modes.setObjectName("iosCard")
         ml = QVBoxLayout(modes)
         ml.setContentsMargins(16, 16, 16, 16)
-        ml.addWidget(QLabel("CHẾ ĐỘ & CÔNG CỤ", objectName="iosSection"))
+        sec = QLabel("CHẾ ĐỘ & CÔNG CỤ"); sec.setObjectName("iosSection"); ml.addWidget(sec)
         r1 = QHBoxLayout()
         for text, tool, args in [
             ("Normal", "idevice_id", ["-l"]),
@@ -486,7 +486,7 @@ class AndroidTool(QMainWindow):
         info.setObjectName("iosCard")
         il = QVBoxLayout(info)
         il.setContentsMargins(16, 14, 16, 14)
-        il.addWidget(QLabel("iOS DEVICE INFO", objectName="iosSection"))
+        sec = QLabel("iOS DEVICE INFO"); sec.setObjectName("iosSection"); il.addWidget(sec)
         self.ios_info = QTextEdit()
         self.ios_info.setReadOnly(True)
         self.ios_info.setMinimumHeight(150)
