@@ -4,6 +4,7 @@ from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QBrush, QFont, QPaint
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import Qt, QEvent, QTimer
 from driver_manager import DriverManager
+from ios_engine import IOSDeviceEngine
 from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar,QSplashScreen,QCheckBox
 
 APP="Apple Seed Android Service Center"
@@ -197,8 +198,7 @@ class AndroidTool(QMainWindow):
         """
 
     def build(self):
-        root=QWidget(); self.setCentralWidget(root)
-        main=QVBoxLayout(root); main.setContentsMargins(14,14,14,10); main.setSpacing(9)
+        root=QWidget(); self.setCentralWidget(root)        main=QVBoxLayout(root); main.setContentsMargins(14,14,14,10); main.setSpacing(9)
         head=QFrame(); head.setObjectName("head"); h=QHBoxLayout(head); h.setContentsMargins(18,12,18,12)
         a=QLabel("◉ Apple Seed"); a.setObjectName("brand"); h.addWidget(a)
         b=QLabel("ANDROID SERVICE CENTER"); b.setObjectName("blue"); h.addWidget(b)
@@ -397,8 +397,7 @@ class AndroidTool(QMainWindow):
         # Cho subprocess chạy tại đúng thư mục đó và thêm thư mục vào PATH.
         exe_dir = str(Path(path).resolve().parent)
         env = os.environ.copy()
-        env["PATH"] = exe_dir + os.pathsep + env.get("PATH", "")
-        p = subprocess.run(
+        env["PATH"] = exe_dir + os.pathsep + env.get("PATH", "")        p = subprocess.run(
             [path] + list(args or []),
             capture_output=True,
             text=True,
@@ -597,8 +596,7 @@ class AndroidTool(QMainWindow):
     def ios_hidden_info(self):
         self._ios_log("Hidden account: module chưa được bật.")
 
-    def ios_action_info(self, action):
-        labels = {
+    def ios_action_info(self, action):        labels = {
             "backup": "Backup iOS sẽ được triển khai bằng engine libimobiledevice/Apple tương thích.",
             "restore": "Restore có thể xoá dữ liệu và chỉ nên bật sau khi có engine/firmware hợp lệ.",
             "firmware": "Firmware/iPSW cần engine restore tương thích và kiểm tra thiết bị trước khi chạy."
@@ -797,8 +795,7 @@ class AndroidTool(QMainWindow):
             )
         self.status.showMessage(name + " • " + message, 5000)
 
-    def swap_transfer_devices(self):
-        a=self.transfer_source.currentIndex(); b=self.transfer_target.currentIndex()
+    def swap_transfer_devices(self):        a=self.transfer_source.currentIndex(); b=self.transfer_target.currentIndex()
         if a<0 or b<0:return
         self.transfer_source.setCurrentIndex(b)
         self.transfer_target.setCurrentIndex(a)
@@ -997,8 +994,7 @@ class AndroidTool(QMainWindow):
             local=work/"sdcard"; local.mkdir(parents=True,exist_ok=True)
             try:
                 self._volte_progress(5,"Đang lấy toàn bộ /sdcard về PC")
-                rc,out=self.run(["-s",src,"pull","/sdcard/.",str(local)],3600)
-                if rc!=0:
+                rc,out=self.run(["-s",src,"pull","/sdcard/.",str(local)],3600)                if rc!=0:
                     raise RuntimeError("PULL /sdcard thất bại: "+(out or "ADB error"))
                 self._volte_progress(60,"Đang chép toàn bộ dữ liệu sang máy mới")
                 self.run(["-s",dst,"shell","mkdir","-p","/sdcard"],30)
@@ -1197,8 +1193,7 @@ class AndroidTool(QMainWindow):
                 for line in out.splitlines()[1:]:
                     p=line.split()
                     if len(p)>=2 and p[1] in ("device","unauthorized"):
-                        online.append(p[0])
-                current=self.serial
+                        online.append(p[0])                current=self.serial
                 if current and current not in online:
                     self._shizuku_autostart_serial=""
                     self.post(self.refresh_devices)
@@ -1397,8 +1392,7 @@ class AndroidTool(QMainWindow):
                 # 7) Một lần force-stop phone cuối để IMS/Settings đọc lại config.
                 try:
                     self.run([
-                        "-s",serial,"shell","am","force-stop","com.android.phone"
-                    ],15)
+                        "-s",serial,"shell","am","force-stop","com.android.phone"                    ],15)
                     time.sleep(3.0)
                 except Exception as e:
                     self.log("⚠ Không force-stop được com.android.phone: "+str(e))
@@ -1598,7 +1592,6 @@ class AndroidTool(QMainWindow):
                 self.showout(self.device_out,"PHÂN TÍCH THIẾT BỊ","\n".join(out));self.log("Đã phân tích thiết bị.")
             except Exception as e:self.showout(self.device_out,"PHÂN TÍCH","LỖI: "+str(e))
         self.threaded(w)
-
     def backup(self):
         """Backup các dữ liệu chẩn đoán + thiết lập VoLTE có thể đọc/ghi qua ADB.
         Không root, không sao lưu phân vùng hệ thống/IMEI/NVRAM.
@@ -1797,8 +1790,7 @@ class AndroidTool(QMainWindow):
         if not self.serial:
             return False, "Chưa chọn thiết bị ADB."
 
-        try:
-            pkg_out = self.shell("pm list packages moe.shizuku.privileged.api", 8)
+        try:            pkg_out = self.shell("pm list packages moe.shizuku.privileged.api", 8)
         except Exception as e:
             return False, "Không kiểm tra được package Shizuku: " + str(e)
 
@@ -1998,7 +1990,6 @@ class AndroidTool(QMainWindow):
                                     installed=False
                                 if installed:
                                     break
-
                 if installed:
                     out.append("\\n✓ Apple Seed VoLTE đã được cài.")
                 else:
@@ -2198,209 +2189,3 @@ class AndroidTool(QMainWindow):
 
                 self._volte_progress(75,"Mở trình cài hệ thống")
                 launched=False
-                for action in ("android.intent.action.VIEW","android.intent.action.INSTALL_PACKAGE"):
-                    rc_i,o_i=self.run(["-s",self.serial,"shell","am","start",
-                        "-a",action,"-d","file://"+remote,
-                        "-t","application/vnd.android.package-archive","-f","0x10000000"],20)
-                    out.append(f"\n--- {action} rc={rc_i} ---\n{o_i}")
-                    if rc_i==0:
-                        launched=True
-                        break
-
-                out.append("\nAPK: "+remote)
-                if launched:
-                    out.append("⚠ ROM/SafeCenter chặn cài im lặng; Package Installer đã mở.")
-                    self.post(lambda:QMessageBox.information(
-                        self,"Apple Seed VoLTE",
-                        "Đã mở trình cài hệ thống. Nếu máy hỏi quyền bảo mật, cho phép cài APK rồi bấm CÀI ĐẶT."
-                    ))
-                else:
-                    self.post(lambda:QMessageBox.warning(
-                        self,"Cài AppleSeed VoLTE",
-                        "ROM chặn cả ADB install và Package Installer. APK đã được chép vào /sdcard/AppleSeed/APK/."
-                    ))
-                self._volte_progress(100,"Hoàn tất")
-                self.showout(self.volte_out,"CÀI APP VoLTE","\n".join(out))
-            except Exception as e:
-                for key,v in original_verifier.items():
-                    if v in ("0","1"):
-                        try:self.run(["-s",self.serial,"shell","settings","put","global",key,v],8)
-                        except:pass
-                out.append("\n❌ LỖI: "+str(e))
-                self.showout(self.volte_out,"CÀI APP VoLTE","\n".join(out))
-                self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APP VoLTE lỗi",e))
-        self.threaded(w)
-
-    def open_volte_app(self):
-        if not self.require():return
-        def w():
-            # Explicit component ổn định hơn monkey trên Samsung/ColorOS.
-            rc,o=self.run(["-s",self.serial,"shell","am","start","-n","vn.appleseed.volte/.MainActivity"],15)
-            if rc!=0:
-                rc,o=self.run(["-s",self.serial,"shell","monkey","-p","vn.appleseed.volte","1"],15)
-            self.showout(self.volte_out,"MỞ APP",f"rc={rc}\n{o}")
-        self.threaded(w)
-
-    def list_packages(self):
-        if not self.require():return
-        q=self.pkg.text().strip()
-        def w():
-            try:
-                c="pm list packages"+((" | grep -i "+shquote(q)) if q else "")
-                self.showout(self.app_out,"PACKAGES",self.shell(c,30))
-            except Exception as e:self.showout(self.app_out,"PACKAGES","LỖI: "+str(e))
-        self.threaded(w)
-
-    def install_apk(self):
-        if not self.require():return
-        p,_=QFileDialog.getOpenFileName(self,"Chọn APK","","APK (*.apk)")
-        if not p:return
-        def w():
-            out=["===== APPLE SEED APK INSTALLER =====",f"FILE: {p}"]
-            original_verifier={}
-            try:
-                self._volte_progress(10,"Kiểm tra APK")
-                rc,o=self.run(["-s",self.serial,"install","-r","-d","-g","--no-incremental",p],120)
-                out.append(f"\n--- ADB INSTALL #1 rc={rc} ---\n{o}")
-
-                verification_failure=("INSTALL_FAILED_VERIFICATION_FAILURE" in o or
-                                       "verification failure" in o.lower() or
-                                       "Package Verification Result" in o)
-                if rc != 0 and verification_failure:
-                    self._volte_progress(30,"Tắt xác minh APK qua ADB và thử lại")
-                    for key in ("verifier_verify_adb_installs","package_verifier_enable"):
-                        try:
-                            _,v=self.run(["-s",self.serial,"shell","settings","get","global",key],8)
-                            original_verifier[key]=v.strip()
-                            self.run(["-s",self.serial,"shell","settings","put","global",key,"0"],8)
-                            out.append(f"SET {key}=0 (cũ: {v.strip() or 'unknown'})")
-                        except Exception as e:
-                            out.append(f"SET {key}=0 ERROR: {e}")
-
-                    rc2,o2=self.run(["-s",self.serial,"install","-r","-d","-g","--no-incremental",p],120)
-                    out.append(f"\n--- ADB INSTALL #2 rc={rc2} ---\n{o2}")
-                    if rc2==0: rc,o=rc2,o2
-
-                for key,v in original_verifier.items():
-                    if v in ("0","1"):
-                        try:self.run(["-s",self.serial,"shell","settings","put","global",key,v],8)
-                        except:pass
-
-                if rc==0:
-                    self._volte_progress(100,"Cài APK thành công")
-                    out.append("\n✅ CÀI APK THÀNH CÔNG BẰNG ADB.")
-                    self.showout(self.app_out,"CÀI APK","\n".join(out))
-                    self.log(f"APK installed: {Path(p).name}")
-                    return
-
-                remote="/sdcard/AppleSeed/APK/"+Path(p).name
-                self._volte_progress(55,"ADB bị chặn — đưa APK vào điện thoại")
-                self.run(["-s",self.serial,"shell","mkdir","-p","/sdcard/AppleSeed/APK"],15)
-                rc_push,o_push=self.run(["-s",self.serial,"push",p,remote],90)
-                out.append(f"\n--- PUSH rc={rc_push} ---\n{o_push}")
-                if rc_push!=0: raise RuntimeError(o_push or "Không push được APK")
-
-                self._volte_progress(75,"Mở trình cài hệ thống")
-                attempts=[
-                    ["-s",self.serial,"shell","am","start","-a","android.intent.action.VIEW",
-                     "-d","file://"+remote,"-t","application/vnd.android.package-archive","-f","0x10000000"],
-                    ["-s",self.serial,"shell","am","start","-a","android.intent.action.INSTALL_PACKAGE",
-                     "-d","file://"+remote,"-t","application/vnd.android.package-archive","-f","0x10000000"]
-                ]
-                launched=False
-                for cmd in attempts:
-                    rc_i,o_i=self.run(cmd,20)
-                    out.append(f"\n--- PACKAGE INSTALLER rc={rc_i} ---\n{o_i}")
-                    if rc_i==0:
-                        launched=True
-                        break
-
-                if launched:
-                    out.append("\n⚠ ROM/SafeCenter chặn cài im lặng; trình cài hệ thống đã mở.")
-                    self.post(lambda:QMessageBox.information(
-                        self,"Apple Seed — Cài APK",
-                        "ADB bị ROM/SafeCenter chặn cài trực tiếp.\n\n"
-                        "Apple Seed đã đưa APK vào máy và mở trình cài hệ thống.\n"
-                        "Nếu có hộp thoại bảo mật, cho phép cài ứng dụng rồi bấm CÀI ĐẶT."
-                    ))
-                else:
-                    out.append("\n❌ Không gọi được Package Installer của ROM.")
-                    self.post(lambda:QMessageBox.warning(
-                        self,"Cài APK lỗi",
-                        "ROM đã chặn cả ADB install và Package Installer.\n"
-                        "APK vẫn nằm trong /sdcard/AppleSeed/APK/ để cài thủ công."
-                    ))
-                self._volte_progress(100,"Hoàn tất")
-                self.showout(self.app_out,"CÀI APK","\n".join(out))
-            except Exception as e:
-                for key,v in original_verifier.items():
-                    if v in ("0","1"):
-                        try:self.run(["-s",self.serial,"shell","settings","put","global",key,v],8)
-                        except:pass
-                out.append("\n❌ LỖI: "+str(e))
-                self.showout(self.app_out,"CÀI APK","\n".join(out))
-                self.post(lambda e=str(e):QMessageBox.warning(self,"Cài APK lỗi",e))
-        self.threaded(w)
-
-    def file_ls(self):
-        if not self.require():return
-        p=self.remote.text().strip() or "/sdcard"
-        def w():
-            try:self.showout(self.files_out,"LS "+p,self.shell("ls -la "+shquote(p),20))
-            except Exception as e:self.showout(self.files_out,"LS","LỖI: "+str(e))
-        self.threaded(w)
-
-    def pull_file(self):
-        if not self.require():return
-        remote=self.remote.text().strip();p,_=QFileDialog.getSaveFileName(self,"Lưu file","","All files (*)")
-        if not remote or not p:return
-        def w():rc,o=self.run(["-s",self.serial,"pull",remote,p],60);self.showout(self.files_out,"PULL",f"rc={rc}\n{o}")
-        self.threaded(w)
-
-    def push_file(self):
-        if not self.require():return
-        p,_=QFileDialog.getOpenFileName(self,"Chọn file","","All files (*)")
-        if not p:return
-        remote=self.remote.text().strip() or "/sdcard/"
-        def w():rc,o=self.run(["-s",self.serial,"push",p,remote],60);self.showout(self.files_out,"PUSH",f"rc={rc}\n{o}")
-        self.threaded(w)
-
-    def run_manual(self):
-        if not self.require():return
-        c=self.adb_edit.text().strip()
-        if not c:return
-        def w():
-            try:self.showout(self.adb_out,"ADB SHELL",self.shell(c,60))
-            except Exception as e:self.showout(self.adb_out,"ADB SHELL","LỖI: "+str(e))
-        self.threaded(w)
-
-    def closeEvent(self,e):
-        try:self.stop_mirror()
-        except:pass
-        super().closeEvent(e)
-
-def shquote(s): return "'"+str(s).replace("'","'\\''")+"'"
-
-if __name__=="__main__":
-    app=QApplication(sys.argv)
-    app.setApplicationName(APP)
-
-    # Splash Android hiển thị ngay khi mở tool để tránh cảm giác đứng/chậm.
-    splash=AppleSeedSplash()
-    splash.show()
-    app.processEvents()
-    splash.set_progress(18, "Đang khởi tạo giao diện...")
-    w=AndroidTool()
-    splash.set_progress(72, "Đang khởi động ADB...")
-    app.processEvents()
-    splash.set_progress(100, "Apple Seed sẵn sàng.")
-
-    # Giữ splash ngắn rồi chuyển mượt sang cửa sổ chính.
-    def open_main():
-        splash.close()
-        w.show()
-        w.raise_()
-        w.activateWindow()
-
-    QTimer.singleShot(420, open_main)
-    sys.exit(app.exec())
