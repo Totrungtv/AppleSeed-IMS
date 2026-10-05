@@ -363,26 +363,41 @@ class AndroidTool(QMainWindow):
         return AnimatedHero(pix)
 
     def _find_ios_cli(self, name):
-        """Tìm bộ công cụ libimobiledevice/irecovery cạnh Apple Seed hoặc trong PATH."""
-        candidates = [
-            self.base / "ios-tools" / (name + (".exe" if os.name == "nt" else "")),
-            self.base / "tools" / "ios" / (name + (".exe" if os.name == "nt" else "")),
+        """Tìm CLI iOS ở mọi thư mục con của bộ engine Apple Seed."""
+        exe = name + (".exe" if os.name == "nt" else "")
+        roots = [
+            self.base / "ios-tools",
+            self.base / "tools" / "ios",
         ]
+        # Ưu tiên file nằm trực tiếp trong ios-tools.
+        for root in roots:
+            direct = root / exe
+            if direct.exists():
+                return str(direct)
+        # Gói ZIP của libimobiledevice thường có thêm một thư mục cấp ngoài.
+        for root in roots:
+            if root.exists():
+                try:
+                    found = next(root.rglob(exe), None)
+                except Exception:
+                    found = None
+                if found and found.is_file():
+                    return str(found)
         found = shutil.which(name)
-        if found:
-            candidates.append(Path(found))
-        for p in candidates:
-            if p.exists():
-                return str(p)
-        return None
+        return str(found) if found else None
 
     def _ios_run(self, tool, args=None, timeout=20):
         path = self._find_ios_cli(tool)
         if not path:
             raise RuntimeError(
-                f"Chưa có {tool}.exe. Đặt bộ libimobiledevice/irecovery vào thư mục "
-                f"ios-tools cạnh Apple Seed hoặc cài để {tool} có trong PATH."
+                f"Chưa có {tool}.exe. Apple Seed sẽ tự nạp engine vào "
+                f"thư mục ios-tools khi thiếu."
             )
+        # DLL của libimobiledevice/usbmuxd/libusb thường nằm cạnh EXE.
+        # Cho subprocess chạy tại đúng thư mục đó và thêm thư mục vào PATH.
+        exe_dir = str(Path(path).resolve().parent)
+        env = os.environ.copy()
+        env["PATH"] = exe_dir + os.pathsep + env.get("PATH", "")
         p = subprocess.run(
             [path] + list(args or []),
             capture_output=True,
@@ -390,6 +405,8 @@ class AndroidTool(QMainWindow):
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            cwd=exe_dir,
+            env=env,
             creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
         )
         out = ((p.stdout or "") + (p.stderr or "")).strip()
@@ -398,7 +415,7 @@ class AndroidTool(QMainWindow):
         return out
 
     def ios_tab(self):
-        """iOS Service Center — giao diện lấy cảm hứng từ 67CafeRacer, nhưng dùng engine iOS của Apple Seed."""
+        """Apple Seed iOS Service Center — giao diện riêng của Apple Seed."""
         w=QWidget()
         w.setObjectName("iosPage")
         w.setStyleSheet("""
@@ -422,7 +439,7 @@ class AndroidTool(QMainWindow):
         """)
         root=QVBoxLayout(w); root.setContentsMargins(28,18,28,18); root.setSpacing(12)
 
-        title=QLabel("67CafeRacer Ramdisk A12-13 V2.3  •  Apple Seed iOS Service")
+        title=QLabel("Apple Seed iOS Service Center")
         title.setObjectName("iosCafeTitle"); title.setAlignment(Qt.AlignCenter)
         root.addWidget(title)
 
@@ -489,7 +506,7 @@ class AndroidTool(QMainWindow):
 
         self.ios_progress=QProgressBar(); self.ios_progress.setObjectName("iosCafeProgress"); self.ios_progress.setRange(0,100); self.ios_progress.setValue(0)
         bl.addWidget(self.ios_progress)
-        hint=QLabel("Giao diện theo workflow 67CafeRacer. Các thao tác ramdisk/bypass nâng cao chỉ mở khi Apple Seed có engine tương thích và thiết bị phù hợp.")
+        hint=QLabel("Apple Seed iOS Engine • Tự nhận thiết bị Normal / Recovery / DFU khi bộ công cụ tương thích đã sẵn sàng.")
         hint.setStyleSheet("color:#6b7280;font-size:8.5pt"); hint.setWordWrap(True); bl.addWidget(hint)
         root.addWidget(bypass)
 
@@ -573,22 +590,33 @@ class AndroidTool(QMainWindow):
     def refresh_ios_devices(self):
         if not hasattr(self, "ios_devices"):
             return
+        self.ios_devices.blockSignals(True)
         self.ios_devices.clear()
+        self.ios_devices.blockSignals(False)
         try:
-            out=self._ios_run("idevice_id",["-l"],timeout=10)
-            ids=[x.strip() for x in out.splitlines() if x.strip()]
+            out=self._ios_run("idevice_id",["-l"],timeout=15)
+            ids=[]
+            for line in out.splitlines():
+                udid=line.strip()
+                if udid and udid not in ids:
+                    ids.append(udid)
             if ids:
                 for udid in ids:
                     self.ios_devices.addItem(udid,udid)
-                self._ios_log("✓ Đã phát hiện "+str(len(ids))+" thiết bị: "+", ".join(ids))
+                self.ios_devices.setCurrentIndex(0)
+                self._ios_log("✓ Đã nhận "+str(len(ids))+" iPhone/iPad: "+", ".join(ids))
                 if hasattr(self,"ios_mode"):
                     self.ios_mode.setText("Normal")
+                self.ios_progress.setValue(70)
+                # Tự đọc thông tin ngay khi cắm máy, không cần bấm DEVICE INFO.
+                self.ios_device_info()
                 self.ios_progress.setValue(100)
             else:
-                self._ios_log("⚠ Không thấy iPhone/iPad ở chế độ Normal.")
+                self._ios_log("⚠ ADB không liên quan ở đây: iOS engine chưa thấy thiết bị Normal.")
+                self._ios_log("   Kiểm tra Apple Mobile Device/usbmuxd, cáp dữ liệu và bấm Trust trên iPhone.")
                 self.ios_progress.setValue(0)
         except Exception as e:
-            self._ios_log("⚠ iOS engine: "+str(e))
+            self._ios_log("❌ iOS ENGINE: "+str(e))
             self.ios_progress.setValue(0)
 
     def transfer_tab(self):
