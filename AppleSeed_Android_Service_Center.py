@@ -378,6 +378,8 @@ class AndroidTool(QMainWindow):
         w.setObjectName("iosPage")
         w.setStyleSheet("""
             QWidget#iosPage{background:#eef5ff}
+            QWidget#iosPage QLabel{background:transparent;color:#17365d}
+            QWidget#iosPage QComboBox{background:#ffffff;color:#17365d;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px}
             QFrame#iosCard{background:#ffffff;border:1px solid #d5e5f5;border-radius:15px}
             QFrame#iosHero{background:#071a2f;border:1px solid #2563eb;border-radius:16px}
             QLabel#iosTitle{color:#12345a;font-size:23pt;font-weight:900}
@@ -525,8 +527,15 @@ class AndroidTool(QMainWindow):
                 self.ios_status.setStyleSheet("background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900")
                 self._ios_log("Không thấy iPhone/iPad ở chế độ Normal.")
         except Exception as e:
-            self.ios_status.setText("iOS: THIẾU ENGINE")
+            self.ios_status.setText("iOS: CHƯA CÓ TOOL")
             self.ios_status.setStyleSheet("background:#3b1720;color:#fecaca;border-radius:9px;padding:9px 14px;font-weight:900")
+            self.ios_info.setPlainText(
+                "APPLE SEED iOS\n\n"
+                "Chưa tìm thấy bộ công cụ iOS.\n"
+                "Đặt idevice_id.exe, ideviceinfo.exe và irecovery.exe vào:\n"
+                + str(self.base / "ios-tools") +
+                "\n\nSau đó bấm QUÉT iOS."
+            )
             self._ios_log("⚠ " + str(e))
 
     def ios_device_info(self):
