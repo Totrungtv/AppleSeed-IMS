@@ -268,6 +268,9 @@ class PhoneDiagnosticEngine:
             lines.append("⚪ Thiết bị không expose power_supply node qua ADB.")
         for rail in rails:
             lines.append(("🔌 " if rail.get("source")=="POWER_SUPPLY" else "⚡ ") + rail["source"] + " • " + rail["name"])
+            if not rail["values"]:
+                lines.append("   ⚪ Node tồn tại nhưng kernel không expose thuộc tính điện áp/trạng thái có thể đọc qua ADB.")
+                lines.append("   ℹ Không được xem node này là 0 V hay lỗi nguồn.")
             for k,v in rail["values"].items():
                 unit=""
                 try:
@@ -286,7 +289,11 @@ class PhoneDiagnosticEngine:
                     pass
                 lines.append(f"   {k} = {v}{unit}")
             lines.append("")
-        lines.append("KẾT LUẬN: giá trị trên là dữ liệu firmware expose. Muốn đo VDD_MAIN/VDD_CPU/VDD_NAND/PMIC rail vật lý phải đo trực tiếp trên mainboard.")
+        if result.get("debugfs_available"):
+            lines += ["", "### REGULATOR SUMMARY (DEBUGFS)", result["raw"]]
+        else:
+            lines += ["", "⚪ Kernel không cho đọc regulator_summary qua ADB (thường cần debugfs/root)."]
+        lines.append("KẾT LUẬN: regulator.* chỉ chứng minh kernel có đăng ký regulator. Không có giá trị đọc được không đồng nghĩa rail = 0 V. Muốn biết điện áp thực tế từng rail phải có số đo phần cứng hoặc kernel/driver expose giá trị đó.")
         return "\n".join(lines)
 
     def summary_text(self, report):
