@@ -178,14 +178,17 @@ class PhoneDiagnosticEngine:
         return report
 
     def voltage_scan(self, shell):
-        """Enumerate exposed power nodes using batched cat commands; no shell for/do loops."""
-        fields = (
+        """Scan Android power_supply/regulator interfaces and optional debugfs regulator summary."""
+        power_fields = (
             "voltage_now voltage_avg voltage_min voltage_max voltage_min_design "
             "voltage_max_design voltage_ocv voltage_boot input_voltage_limit "
             "input_voltage_limit_max constant_charge_voltage constant_charge_voltage_max "
             "current_now current_avg current_max power_now temp capacity status health present online type"
         ).split()
-        reg_fields = "name microvolts min_uV max_uV microvolts_idle state status type".split()
+        reg_fields = (
+            "name microvolts min_uV max_uV microvolts_idle state status type "
+            "enable enabled bypass num_users"
+        ).split()
 
         def list_dirs(pattern):
             ok, out, err = self._call(shell, "ls -d " + pattern, 10)
@@ -193,46 +196,66 @@ class PhoneDiagnosticEngine:
                 return []
             return [x.strip() for x in out.splitlines() if x.strip().startswith("/sys/")]
 
-        power_dirs = list_dirs("/sys/class/power_supply/*")
-        regulator_dirs = list_dirs("/sys/class/regulator/*")
-
-        # Build one remote shell command instead of hundreds of ADB calls.
-        commands = []
-        for base in power_dirs:
-            name = base.rsplit("/", 1)[-1]
-            commands.append('echo "## POWER_SUPPLY:' + name + '"')
+        def read_batch(base, fields):
+            commands = []
             for field in fields:
-                commands.append('echo "' + field + '=$(cat ' + base + '/' + field + ' 2>/dev/null)"')
-        for base in regulator_dirs:
-            name = base.rsplit("/", 1)[-1]
-            commands.append('echo "## REGULATOR:' + name + '"')
-            for field in reg_fields:
-                commands.append('echo "' + field + '=$(cat ' + base + '/' + field + ' 2>/dev/null)"')
-
-        if not commands:
-            return {"ok": True, "rails": [], "raw": "", "note": "Thiết bị không expose power/regulator node."}
-
-        script = "\n".join(commands)
-        ok, raw, err = self._call(shell, script, 20)
-        if not ok:
-            return {"ok": False, "error": err, "rails": [], "raw": ""}
+                commands.append(
+                    'printf "%s=" "' + field + '"; cat "' + base + '/' + field + '" 2>/dev/null; echo'
+                )
+            if not commands:
+                return {}
+            ok, out, err = self._call(shell, "\n".join(commands), 12)
+            if not ok:
+                return {}
+            values = {}
+            for line in out.splitlines():
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    value = value.strip()
+                    if value:
+                        values[key.strip()] = value
+            return values
 
         rails = []
-        current = None
-        for line in raw.splitlines():
-            line = line.strip()
-            if line.startswith("## POWER_SUPPLY:"):
-                current = {"source": "POWER_SUPPLY", "name": line.split(":", 1)[1], "values": {}}
-                rails.append(current)
-            elif line.startswith("## REGULATOR:"):
-                current = {"source": "REGULATOR", "name": line.split(":", 1)[1], "values": {}}
-                rails.append(current)
-            elif "=" in line and current is not None:
-                key, value = line.split("=", 1)
-                if value.strip() != "":
-                    current["values"][key] = value.strip()
+        for base in list_dirs("/sys/class/power_supply/*"):
+            values = read_batch(base, power_fields)
+            if values:
+                rails.append({
+                    "source": "POWER_SUPPLY",
+                    "name": base.rsplit("/", 1)[-1],
+                    "values": values
+                })
 
-        return {"ok": True, "rails": rails, "raw": raw, "note": "Đã quét theo batch, không dùng vòng lặp for/do trên Android shell."}
+        for base in list_dirs("/sys/class/regulator/*"):
+            values = read_batch(base, reg_fields)
+            # Keep an explicit node entry so the report distinguishes
+            # "regulator exists" from "regulator voltage is readable".
+            rails.append({
+                "source": "REGULATOR",
+                "name": base.rsplit("/", 1)[-1],
+                "values": values
+            })
+
+        # Qualcomm/Android kernels often expose the real regulator table only
+        # through debugfs. This is optional and may require root/debugfs access.
+        debugfs_paths = (
+            "/sys/kernel/debug/regulator/regulator_summary",
+            "/d/regulator/regulator_summary",
+        )
+        debugfs = ""
+        for path in debugfs_paths:
+            ok, out, err = self._call(shell, "cat " + path, 10)
+            if ok and out.strip():
+                debugfs = out.strip()
+                break
+
+        return {
+            "ok": True,
+            "rails": rails,
+            "raw": debugfs,
+            "debugfs_available": bool(debugfs),
+            "note": "Regulator class node không đồng nghĩa có điện áp đo thực tế; regulator_summary/debugfs mới có thể cung cấp bảng cấu hình chi tiết nếu kernel cho phép."
+        }
 
     def format_voltage_report(self, result):
         if not result.get("ok"):
