@@ -331,8 +331,13 @@ class AndroidTool(QMainWindow):
             except Exception:pass
         else:super().customEvent(e)
 
-    def threaded(self,fn):
-        self.post(lambda:(self.progress.show(), self.status.showMessage("⏳ ĐANG XỬ LÝ...")))
+    def threaded(self,fn, determinate=False):
+        def start_progress():
+            self.progress.setRange(0,100 if determinate else 0)
+            self.progress.setValue(0)
+            self.progress.show()
+            self.status.showMessage("⏳ ĐANG XỬ LÝ...")
+        self.post(start_progress)
         def worker():
             started=time.time(); ok=True
             try: fn()
@@ -1841,16 +1846,19 @@ class AndroidTool(QMainWindow):
                     self.log("🩺 DIAGNOSTIC BLOCKED: ADB state="+(state or "unknown"))
                     return
 
+                self.post(lambda: (self.progress.setValue(15), self.status.showMessage("⏳ Đã kết nối ADB • bắt đầu kiểm tra...")))
                 self.diag_summary.setText("⏳ ADB OK — đang chạy chẩn đoán...")
                 report=self.phone_diagnostic.run(self.shell)
+                self.post(lambda: (self.progress.setValue(80), self.status.showMessage("⏳ Đang tổng hợp kết quả...")))
                 text_report=self.phone_diagnostic.format_report(report)
+                self.post(lambda: self.progress.setValue(100))
                 self.post(lambda r=report,t=text_report: (self.diag_out.setPlainText(t), self.diag_summary.setText(self.phone_diagnostic.summary_text(r))))
                 self.log("🩺 PHONE DIAGNOSTIC: "+report.get("headline","Hoàn tất"))
             except Exception as e:
                 msg="❌ CHẨN ĐOÁN LỖI: "+str(e)
                 self.post(lambda m=msg: (self.diag_out.setPlainText(m), self.diag_summary.setText(m)))
                 self.log(msg)
-        self.threaded(w)
+        self.threaded(w, determinate=True)
 
     def run_comprehensive_diagnostic(self):
         if not self.require(): return
@@ -1864,14 +1872,17 @@ class AndroidTool(QMainWindow):
                     msg="🔐 ADB chưa ở trạng thái DEVICE. Cấp quyền USB debugging rồi chạy lại."
                     self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
                     return
+                self.post(lambda: (self.progress.setValue(15), self.status.showMessage("⏳ ADB OK • kiểm tra thiết bị...")))
                 report=self.phone_diagnostic.comprehensive_run(self.shell)
+                self.post(lambda: (self.progress.setValue(85), self.status.showMessage("⏳ Đang tổng hợp TEST TOÀN DIỆN...")))
                 txt=self.phone_diagnostic.format_report(report)
+                self.post(lambda: self.progress.setValue(100))
                 self.post(lambda r=report,t=txt:(self.diag_out.setPlainText(t),self.diag_summary.setText(self.phone_diagnostic.summary_text(r))))
                 self.log("🩺 COMPREHENSIVE DIAGNOSTIC: "+report.get("headline","Hoàn tất"))
             except Exception as e:
                 msg="❌ TEST TOÀN DIỆN: "+str(e)
                 self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
-        self.threaded(w)
+        self.threaded(w, determinate=True)
 
     def run_voltage_scan(self):
         if not self.require(): return
@@ -1885,8 +1896,11 @@ class AndroidTool(QMainWindow):
                     msg="🔐 ADB chưa ở trạng thái DEVICE. Không thể đọc power rail."
                     self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
                     return
+                self.post(lambda: (self.progress.setValue(15), self.status.showMessage("⏳ ADB OK • tìm power_supply / regulator...")))
                 result=self.phone_diagnostic.voltage_scan(self.shell)
+                self.post(lambda: (self.progress.setValue(85), self.status.showMessage("⏳ Đang tổng hợp điện áp / power rail...")))
                 txt=self.phone_diagnostic.format_voltage_report(result)
+                self.post(lambda: self.progress.setValue(100))
                 count=len(result.get("rails",[])) if result.get("ok") else 0
                 summary=f"⚡ ĐÃ QUÉT {count} POWER / REGULATOR NODE" if result.get("ok") else "🔴 KHÔNG ĐỌC ĐƯỢC POWER RAIL"
                 self.post(lambda t=txt,s=summary:(self.diag_out.setPlainText(t),self.diag_summary.setText(s)))
@@ -1894,7 +1908,7 @@ class AndroidTool(QMainWindow):
             except Exception as e:
                 msg="❌ POWER RAIL SCAN: "+str(e)
                 self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
-        self.threaded(w)
+        self.threaded(w, determinate=True)
 
     def export_diagnostic_report(self):
         if not hasattr(self,"diag_out") or not self.diag_out.toPlainText().strip():
