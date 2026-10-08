@@ -1809,9 +1809,38 @@ class AndroidTool(QMainWindow):
     def run_phone_diagnostic(self):
         if not self.require(): return
         self.diag_out.clear()
-        self.diag_summary.setText("⏳ Đang kiểm tra điện thoại...")
+        self.diag_summary.setText("⏳ Đang kiểm tra trạng thái ADB...")
         def w():
             try:
+                # QUAN TRỌNG: không được chạy diagnostic khi ADB chưa ở trạng thái
+                # "device". Nếu "unauthorized/offline" thì mọi shell probe đều fail
+                # và dễ bị hiểu nhầm thành lỗi phần cứng.
+                rc,state=self.run(["-s",self.serial,"get-state"],8)
+                state=(state or "").strip().lower()
+                if rc != 0 or state != "device":
+                    if "unauthorized" in state:
+                        title="🔐 ADB CHƯA ĐƯỢC CẤP QUYỀN"
+                        detail=(
+                            "Điện thoại đang ở trạng thái UNAUTHORIZED.\\n\\n"
+                            "1. Mở khóa màn hình điện thoại.\\n"
+                            "2. Rút/cắm lại cáp USB.\\n"
+                            "3. Bấm Allow / Cho phép USB debugging trên điện thoại.\\n"
+                            "4. Nếu có lựa chọn 'Always allow from this computer' thì tích vào.\\n"
+                            "5. Bấm KIỂM TRA LẠI THIẾT BỊ rồi chạy chẩn đoán lại.\\n\\n"
+                            "⚠ Apple Seed KHÔNG kết luận lỗi phần cứng khi ADB chưa được cấp quyền."
+                        )
+                    elif "offline" in state:
+                        title="🔌 ADB OFFLINE"
+                        detail="Thiết bị đang offline. Kiểm tra cáp/USB debugging rồi bấm KIỂM TRA LẠI THIẾT BỊ."
+                    else:
+                        title="❌ ADB CHƯA SẴN SÀNG"
+                        detail="ADB chưa ở trạng thái device. Không thể chạy chẩn đoán phần cứng an toàn."
+                    report_text="===== APPLE SEED — KIỂM TRA TRƯỚC CHẨN ĐOÁN =====\\n\\n"+title+"\\n\\n"+detail
+                    self.post(lambda t=report_text,h=title: (self.diag_out.setPlainText(t), self.diag_summary.setText(h)))
+                    self.log("🩺 DIAGNOSTIC BLOCKED: ADB state="+(state or "unknown"))
+                    return
+
+                self.diag_summary.setText("⏳ ADB OK — đang chạy chẩn đoán...")
                 report=self.phone_diagnostic.run(self.shell)
                 text_report=self.phone_diagnostic.format_report(report)
                 self.post(lambda r=report,t=text_report: (self.diag_out.setPlainText(t), self.diag_summary.setText(self.phone_diagnostic.summary_text(r))))
