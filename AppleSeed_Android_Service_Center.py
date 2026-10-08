@@ -1888,7 +1888,7 @@ class AndroidTool(QMainWindow):
                 result=self.phone_diagnostic.voltage_scan(self.shell)
                 txt=self.phone_diagnostic.format_voltage_report(result)
                 count=len(result.get("rails",[])) if result.get("ok") else 0
-                summary=f"⚡ ĐÃ QUÉT {count} POWER_SUPPLY NODE" if result.get("ok") else "🔴 KHÔNG ĐỌC ĐƯỢC POWER RAIL"
+                summary=f"⚡ ĐÃ QUÉT {count} POWER / REGULATOR NODE" if result.get("ok") else "🔴 KHÔNG ĐỌC ĐƯỢC POWER RAIL"
                 self.post(lambda t=txt,s=summary:(self.diag_out.setPlainText(t),self.diag_summary.setText(s)))
                 self.log("⚡ POWER RAIL SCAN: "+summary)
             except Exception as e:
