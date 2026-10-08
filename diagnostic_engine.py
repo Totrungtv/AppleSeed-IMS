@@ -190,6 +190,18 @@ class PhoneDiagnosticEngine:
     fi
   done
 done
+echo "## REGULATORS"
+for d in /sys/class/regulator/*; do
+  [ -d "$d" ] || continue
+  echo "## REGULATOR:$(basename "$d")"
+  for f in name microvolts min_uV max_uV microvolts_idle state status type; do
+    p="$d/$f"
+    if [ -r "$p" ]; then
+      v=$(cat "$p" 2>/dev/null)
+      echo "$f=$v"
+    fi
+  done
+done
 '''
         ok, raw, err = self._call(shell, "sh -c " + repr(script), 25)
         if not ok:
@@ -199,8 +211,13 @@ done
         for line in raw.splitlines():
             line = line.strip()
             if line.startswith("## POWER_SUPPLY:"):
-                current = {"name": line.split(":",1)[1], "values": {}}
+                current = {"source": "POWER_SUPPLY", "name": line.split(":",1)[1], "values": {}}
                 rails.append(current)
+            elif line.startswith("## REGULATOR:"):
+                current = {"source": "REGULATOR", "name": line.split(":",1)[1], "values": {}}
+                rails.append(current)
+            elif line.startswith("## ") and not line.startswith("## POWER_SUPPLY:") and not line.startswith("## REGULATOR:"):
+                current = None
             elif "=" in line and current is not None:
                 k, v = line.split("=",1)
                 current["values"][k] = v.strip()
@@ -210,13 +227,13 @@ done
         if not result.get("ok"):
             return "===== APPLE SEED — QUÉT ĐIỆN ÁP / POWER RAIL =====\n\n❌ "+result.get("error","Không đọc được.")
         lines=["===== APPLE SEED — QUÉT ĐIỆN ÁP / POWER RAIL =====",
-               "Nguồn: Android /sys/class/power_supply",
+               "Nguồn: Android sysfs / power_supply / regulator",
                "⚠ Đây là các rail/node firmware công khai; không phải toàn bộ rail vật lý trên mainboard.",""]
         rails=result.get("rails", [])
         if not rails:
             lines.append("⚪ Thiết bị không expose power_supply node qua ADB.")
         for rail in rails:
-            lines.append("🔌 "+rail["name"])
+            lines.append(("🔌 " if rail.get("source")=="POWER_SUPPLY" else "⚡ ") + rail["source"] + " • " + rail["name"])
             for k,v in rail["values"].items():
                 unit=""
                 try:
