@@ -203,7 +203,7 @@ for d in /sys/class/regulator/*; do
   done
 done
 '''
-        ok, raw, err = self._call(shell, "sh -c " + repr(script), 25)
+        ok, raw, err = self._call(shell, script, 25)
         if not ok:
             return {"ok": False, "error": err, "rails": [], "raw": ""}
         rails = []
@@ -240,6 +240,10 @@ done
                     n=float(v)
                     if k.startswith("voltage_") or k.endswith("_uV") or k == "microvolts":
                         unit=f" → {n/1000000:.3f} V"
+                        if rail.get("source") == "REGULATOR" and k in ("microvolts", "min_uV", "max_uV", "microvolts_idle"):
+                            unit += " (điện áp cấu hình)"
+                        elif rail.get("source") == "POWER_SUPPLY" and k in ("voltage_now", "voltage_avg", "voltage_ocv"):
+                            unit += " (đọc từ power_supply)"
                     elif k.startswith("current_") or k.startswith("power_"):
                         unit=" (raw kernel unit)"
                     elif k=="temp":
@@ -255,8 +259,10 @@ done
         checks = report.get("checks", [])
         fails = sum(x["status"] == "FAIL" for x in checks)
         warns = sum(x["status"] == "WARN" for x in checks)
-        if fails: return f"🔴 {report.get('headline')} • {fails} lỗi nghi ngờ • {warns} cảnh báo"
-        if warns: return f"🟡 {report.get('headline')} • {warns} cảnh báo"
+        unknown = sum(x["status"] == "UNKNOWN" for x in checks)
+        if fails: return f"🔴 {report.get('headline')} • {fails} lỗi nghi ngờ • {warns} cảnh báo • {unknown} chưa có dữ liệu"
+        if warns: return f"🟡 {report.get('headline')} • {warns} cảnh báo • {unknown} chưa có dữ liệu"
+        if unknown: return f"🟢 {report.get('headline')} • {unknown} mục chưa có dữ liệu"
         return "🟢 CHƯA PHÁT HIỆN BẤT THƯỜNG QUA CÁC BÀI TEST USB"
 
     def format_report(self, report):
