@@ -5,6 +5,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtCore import Qt, QEvent, QTimer
 from driver_manager import DriverManager
 from ios_engine import IOSDeviceEngine
+from diagnostic_engine import PhoneDiagnosticEngine
 from PySide6.QtWidgets import QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QGridLayout,QLabel,QPushButton,QComboBox,QTextEdit,QLineEdit,QTabWidget,QMessageBox,QFileDialog,QFrame,QStatusBar,QProgressBar,QSplashScreen,QCheckBox
 
 APP="Apple Seed Android Service Center"
@@ -155,6 +156,7 @@ class AndroidTool(QMainWindow):
         self.base=Path(__file__).resolve().parent
         self.driver_manager=DriverManager(self.base)
         self.ios_engine=IOSDeviceEngine(self.base)
+        self.phone_diagnostic=PhoneDiagnosticEngine()
         self.adb=self.find_adb()
         self.scrcpy=self.find_scrcpy()
         self.scrcpy_proc=None
@@ -1165,10 +1167,25 @@ class AndroidTool(QMainWindow):
         l.addLayout(r); return w
 
     def diag_tab(self):
-        w=QWidget(); l=QVBoxLayout(w); g=QGridLayout()
-        items=[("LOGCAT","logcat -d -t 1000"),("GETPROP","getprop"),("DUMPSYS","dumpsys"),("PIN","dumpsys battery"),("BỘ NHỚ","df -h"),("RAM","dumpsys meminfo"),("TIẾN TRÌNH","ps -A"),("DỊCH VỤ","service list"),("USB","dumpsys usb"),("CẢM BIẾN","dumpsys sensorservice"),("CAMERA","dumpsys media.camera"),("WINDOW","dumpsys window")]
-        for i,(a,c) in enumerate(items): self.button(g,a,lambda c=c,a=a:self.capture(c,a))
-        l.addLayout(g); self.diag_out=QTextEdit(); self.diag_out.setReadOnly(True); l.addWidget(self.diag_out,1); return w
+        w=QWidget(); l=QVBoxLayout(w)
+        title=QLabel("🩺 CHẨN ĐOÁN ĐIỆN THOẠI TỰ ĐỘNG")
+        title.setStyleSheet("font-size:21pt;font-weight:900;color:#f8fafc")
+        l.addWidget(title)
+        sub=QLabel("Cắm máy → Apple Seed tự kiểm tra → tự chấm điểm → tự đưa ra bệnh nghi ngờ. Không dùng LOGCAT làm kết luận.")
+        sub.setObjectName("muted"); sub.setWordWrap(True); l.addWidget(sub)
+        top=QHBoxLayout()
+        self.button(top,"🩺 CHẨN ĐOÁN TOÀN BỘ",self.run_phone_diagnostic,"green")
+        self.button(top,"↻ KIỂM TRA LẠI THIẾT BỊ",self.refresh_devices)
+        self.button(top,"💾 XUẤT PHIẾU",self.export_diagnostic_report)
+        l.addLayout(top)
+        self.diag_summary=QLabel("Chưa chạy chẩn đoán.")
+        self.diag_summary.setStyleSheet("background:#0d1422;border:1px solid #1e293b;border-radius:10px;padding:12px;font-weight:800;color:#e5e7eb")
+        self.diag_summary.setWordWrap(True); l.addWidget(self.diag_summary)
+        self.diag_out=QTextEdit(); self.diag_out.setReadOnly(True); self.diag_out.setPlaceholderText("Kết quả chẩn đoán sẽ xuất hiện ở đây...")
+        l.addWidget(self.diag_out,1)
+        note=QLabel("⚠ Chẩn đoán qua USB chỉ kết luận được những gì hệ điều hành/giao thức thiết bị cho phép kiểm tra. Lỗi chạm nguồn, IC chết hoàn toàn hoặc đường mạch đứt cần đo phần cứng bằng nguồn DC/multimeter/oscilloscope.")
+        note.setStyleSheet("color:#fbbf24;padding:6px"); note.setWordWrap(True); l.addWidget(note)
+        return w
 
     def control_tab(self):
         w=QWidget(); l=QVBoxLayout(w); g=QGridLayout()
@@ -1788,6 +1805,31 @@ class AndroidTool(QMainWindow):
             try:self.showout(self.control_out,c,self.shell(c,10))
             except Exception as e:self.showout(self.control_out,c,"LỖI: "+str(e))
         self.threaded(w)
+
+    def run_phone_diagnostic(self):
+        if not self.require(): return
+        self.diag_out.clear()
+        self.diag_summary.setText("⏳ Đang kiểm tra điện thoại...")
+        def w():
+            try:
+                report=self.phone_diagnostic.run(self.shell)
+                text_report=self.phone_diagnostic.format_report(report)
+                self.post(lambda r=report,t=text_report: (self.diag_out.setPlainText(t), self.diag_summary.setText(self.phone_diagnostic.summary_text(r))))
+                self.log("🩺 PHONE DIAGNOSTIC: "+report.get("headline","Hoàn tất"))
+            except Exception as e:
+                msg="❌ CHẨN ĐOÁN LỖI: "+str(e)
+                self.post(lambda m=msg: (self.diag_out.setPlainText(m), self.diag_summary.setText(m)))
+                self.log(msg)
+        self.threaded(w)
+
+    def export_diagnostic_report(self):
+        if not hasattr(self,"diag_out") or not self.diag_out.toPlainText().strip():
+            QMessageBox.information(self,"Apple Seed","Chưa có kết quả chẩn đoán để xuất.")
+            return
+        p,_=QFileDialog.getSaveFileName(self,"Xuất phiếu chẩn đoán","","Text (*.txt)")
+        if p:
+            Path(p).write_text(self.diag_out.toPlainText(),encoding="utf-8")
+            self.status.showMessage("✅ Đã xuất phiếu chẩn đoán",4000)
 
     def capture(self,c,title):
         if not self.require():return
