@@ -26,3 +26,12 @@ Android IMS / VoLTE diagnostic project for Apple Seed.
 This project is currently a V1 test foundation. Actual CarrierConfig/IMS override must be validated on compatible devices and carriers before release.
 
 Pixel IMS is treated as a behavioral/reference project. This repository does not copy its branding/assets/source code in V1. If GPL-3.0 code is incorporated later, the applicable license obligations must be followed.
+
+## Automatic Phone Diagnosis
+
+Apple Seed now includes a read-only **Phone Diagnostic Engine** in the Windows Android Service Center:
+- One-click automatic diagnosis from USB/ADB.
+- Checks device identity, battery/temperature, storage, RAM, display service, sensors, camera service, audio service, USB and Package Manager.
+- Produces automatic OK / WARN / FAIL results and conservative fault conclusions.
+- Does **not** use LOGCAT as the diagnostic source.
+- Hardware faults that cannot be established over USB (shorted power rails, dead PMIC/IC, broken traces, physical NAND/UFS faults, etc.) are explicitly reported as requiring bench measurement.
