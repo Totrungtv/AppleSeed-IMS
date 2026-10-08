@@ -123,6 +123,118 @@ class PhoneDiagnosticEngine:
                 "conclusions": conclusions,
                 "headline": conclusions[0][0] if conclusions else "Hoàn tất"}
 
+    def comprehensive_run(self, shell):
+        """Broader read-only hardware/function diagnostic. No logcat."""
+        report = self.run(shell)
+        checks = report["checks"]
+
+        extra = [
+            ("Wi-Fi", "Connectivity", "dumpsys wifi", "Wi-Fi service phản hồi."),
+            ("Bluetooth", "Connectivity", "dumpsys bluetooth_manager", "Bluetooth service phản hồi."),
+            ("Điện thoại / SIM", "Telephony", "dumpsys telephony.registry", "Telephony registry phản hồi."),
+            ("USB HAL", "USB", "dumpsys usb", "USB service phản hồi."),
+            ("Thermal", "Nguồn / nhiệt", "dumpsys thermalservice", "Thermal service phản hồi."),
+            ("Power Manager", "Nguồn", "dumpsys power", "Power Manager phản hồi."),
+            ("Network", "Connectivity", "dumpsys connectivity", "Connectivity service phản hồi."),
+            ("Location / GPS", "Sensors", "dumpsys location", "Location service phản hồi."),
+            ("Media", "Multimedia", "dumpsys media.player", "Media service phản hồi."),
+            ("Vibration", "Haptics", "dumpsys vibrator", "Vibrator service phản hồi."),
+            ("Fingerprint", "Biometrics", "dumpsys fingerprint", "Fingerprint service phản hồi."),
+            ("Face / Biometrics", "Biometrics", "dumpsys face", "Face/biometric service phản hồi."),
+            ("Keyguard", "Input", "dumpsys window policy", "Keyguard/input policy phản hồi."),
+            ("Graphics", "Display", "dumpsys SurfaceFlinger --latency-clear", "SurfaceFlinger phản hồi."),
+            ("CPU", "Performance", "cat /proc/cpuinfo", "CPU information phản hồi."),
+            ("Kernel memory", "Memory", "cat /proc/meminfo", "Kernel memory information phản hồi."),
+            ("Mount / filesystem", "Storage", "cat /proc/mounts", "Filesystem mount table phản hồi."),
+        ]
+        for name, cat, cmd, good in extra:
+            ok, out, err = self._call(shell, cmd, 15)
+            if ok and out.strip():
+                checks.append(dict(name=name, category=cat, status="OK",
+                                   detail=good, evidence=out[:1200], confidence=60))
+            else:
+                checks.append(dict(name=name, category=cat, status="UNKNOWN",
+                                   detail="Thiết bị không expose dữ liệu/service này qua ADB.",
+                                   evidence=err, confidence=0))
+
+        report["checks"] = checks
+        fails = [x for x in checks if x["status"] == "FAIL"]
+        warns = [x for x in checks if x["status"] == "WARN"]
+        report["conclusions"] = []
+        if fails:
+            for x in fails:
+                if x["name"] not in [z[0] for z in report["conclusions"]]:
+                    report["conclusions"].append((f"NGHI BẤT THƯỜNG: {x['name']}",
+                        x["detail"], x.get("confidence", 60)))
+        elif warns:
+            report["conclusions"].append(("CẦN KIỂM TRA THÊM",
+                f"Có {len(warns)} cảnh báo; chưa đủ bằng chứng kết luận lỗi phần cứng.", 60))
+        else:
+            report["conclusions"].append(("CHƯA PHÁT HIỆN BẤT THƯỜNG",
+                "Các bài kiểm tra read-only mà thiết bị cho phép qua USB đều phản hồi bình thường.", 75))
+        report["conclusions"].append(("GIỚI HẠN ĐO PHẦN CỨNG",
+            "USB/ADB không đo trực tiếp được mọi rail trên mainboard. VDD_MAIN, VDD_CPU, VDD_NAND, các rail PMIC... chỉ có thể đọc nếu firmware expose chúng; muốn xác nhận rail vật lý phải dùng nguồn DC/multimeter/oscilloscope.", 100))
+        report["headline"] = report["conclusions"][0][0]
+        return report
+
+    def voltage_scan(self, shell):
+        """Enumerate all power-supply voltage/current/temp nodes exposed by Android."""
+        script = r'''for d in /sys/class/power_supply/*; do
+  [ -d "$d" ] || continue
+  echo "## POWER_SUPPLY:$(basename "$d")"
+  for f in voltage_now voltage_avg voltage_min voltage_max voltage_ocv current_now current_avg current_max power_now temp capacity status health present online type; do
+    p="$d/$f"
+    if [ -r "$p" ]; then
+      v=$(cat "$p" 2>/dev/null)
+      echo "$f=$v"
+    fi
+  done
+done
+'''
+        ok, raw, err = self._call(shell, "sh -c " + repr(script), 25)
+        if not ok:
+            return {"ok": False, "error": err, "rails": [], "raw": ""}
+        rails = []
+        current = None
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("## POWER_SUPPLY:"):
+                current = {"name": line.split(":",1)[1], "values": {}}
+                rails.append(current)
+            elif "=" in line and current is not None:
+                k, v = line.split("=",1)
+                current["values"][k] = v.strip()
+        return {"ok": True, "rails": rails, "raw": raw}
+
+    def format_voltage_report(self, result):
+        if not result.get("ok"):
+            return "===== APPLE SEED — QUÉT ĐIỆN ÁP / POWER RAIL =====\n\n❌ "+result.get("error","Không đọc được.")
+        lines=["===== APPLE SEED — QUÉT ĐIỆN ÁP / POWER RAIL =====",
+               "Nguồn: Android /sys/class/power_supply",
+               "⚠ Đây là các rail/node firmware công khai; không phải toàn bộ rail vật lý trên mainboard.",""]
+        rails=result.get("rails", [])
+        if not rails:
+            lines.append("⚪ Thiết bị không expose power_supply node qua ADB.")
+        for rail in rails:
+            lines.append("🔌 "+rail["name"])
+            for k,v in rail["values"].items():
+                unit=""
+                try:
+                    n=float(v)
+                    if k.startswith("voltage_"):
+                        if abs(n) >= 100000: unit=f" → {n/1000000:.3f} V"
+                        elif abs(n) >= 1000: unit=f" → {n/1000000:.6f} V"
+                    elif k.startswith("current_") or k.startswith("power_"):
+                        unit=" (raw kernel unit)"
+                    elif k=="temp":
+                        unit=f" → {n/10:.1f} °C" if n > 200 else f" → {n:.1f} °C"
+                except Exception:
+                    pass
+                lines.append(f"   {k} = {v}{unit}")
+            lines.append("")
+        lines.append("KẾT LUẬN: giá trị trên là dữ liệu firmware expose. Muốn đo VDD_MAIN/VDD_CPU/VDD_NAND/PMIC rail vật lý phải đo trực tiếp trên mainboard.")
+        return "\n".join(lines)
+
     def summary_text(self, report):
         checks = report.get("checks", [])
         fails = sum(x["status"] == "FAIL" for x in checks)
