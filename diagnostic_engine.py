@@ -178,7 +178,7 @@ class PhoneDiagnosticEngine:
         return report
 
     def voltage_scan(self, shell):
-        """Enumerate power-supply and regulator nodes without relying on shell loops."""
+        """Enumerate exposed power nodes using batched cat commands; no shell for/do loops."""
         fields = (
             "voltage_now voltage_avg voltage_min voltage_max voltage_min_design "
             "voltage_max_design voltage_ocv voltage_boot input_voltage_limit "
@@ -193,37 +193,46 @@ class PhoneDiagnosticEngine:
                 return []
             return [x.strip() for x in out.splitlines() if x.strip().startswith("/sys/")]
 
-        def read_node(path):
-            ok, out, err = self._call(shell, "cat " + path, 8)
-            return out.strip() if ok else ""
+        power_dirs = list_dirs("/sys/class/power_supply/*")
+        regulator_dirs = list_dirs("/sys/class/regulator/*")
+
+        # Build one remote shell command instead of hundreds of ADB calls.
+        commands = []
+        for base in power_dirs:
+            name = base.rsplit("/", 1)[-1]
+            commands.append('echo "## POWER_SUPPLY:' + name + '"')
+            for field in fields:
+                commands.append('echo "' + field + '=$(cat ' + base + '/' + field + ' 2>/dev/null)"')
+        for base in regulator_dirs:
+            name = base.rsplit("/", 1)[-1]
+            commands.append('echo "## REGULATOR:' + name + '"')
+            for field in reg_fields:
+                commands.append('echo "' + field + '=$(cat ' + base + '/' + field + ' 2>/dev/null)"')
+
+        if not commands:
+            return {"ok": True, "rails": [], "raw": "", "note": "Thiết bị không expose power/regulator node."}
+
+        script = "\n".join(commands)
+        ok, raw, err = self._call(shell, script, 20)
+        if not ok:
+            return {"ok": False, "error": err, "rails": [], "raw": ""}
 
         rails = []
-        for base in list_dirs("/sys/class/power_supply/*"):
-            name = base.rsplit("/", 1)[-1]
-            values = {}
-            for field in fields:
-                value = read_node(base + "/" + field)
-                if value != "":
-                    values[field] = value
-            if values:
-                rails.append({"source": "POWER_SUPPLY", "name": name, "values": values})
+        current = None
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith("## POWER_SUPPLY:"):
+                current = {"source": "POWER_SUPPLY", "name": line.split(":", 1)[1], "values": {}}
+                rails.append(current)
+            elif line.startswith("## REGULATOR:"):
+                current = {"source": "REGULATOR", "name": line.split(":", 1)[1], "values": {}}
+                rails.append(current)
+            elif "=" in line and current is not None:
+                key, value = line.split("=", 1)
+                if value.strip() != "":
+                    current["values"][key] = value.strip()
 
-        for base in list_dirs("/sys/class/regulator/*"):
-            name = base.rsplit("/", 1)[-1]
-            values = {}
-            for field in reg_fields:
-                value = read_node(base + "/" + field)
-                if value != "":
-                    values[field] = value
-            if values:
-                rails.append({"source": "REGULATOR", "name": name, "values": values})
-
-        return {
-            "ok": True,
-            "rails": rails,
-            "raw": "",
-            "note": "Đã quét từng node sysfs; không dùng vòng lặp shell."
-        }
+        return {"ok": True, "rails": rails, "raw": raw, "note": "Đã quét theo batch, không dùng vòng lặp for/do trên Android shell."}
 
     def format_voltage_report(self, result):
         if not result.get("ok"):
