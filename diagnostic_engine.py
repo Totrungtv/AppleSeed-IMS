@@ -178,50 +178,52 @@ class PhoneDiagnosticEngine:
         return report
 
     def voltage_scan(self, shell):
-        """Enumerate all power-supply voltage/current/temp nodes exposed by Android."""
-        script = r'''for d in /sys/class/power_supply/*; do
-  [ -d "$d" ] || continue
-  echo "## POWER_SUPPLY:$(basename "$d")"
-  for f in voltage_now voltage_avg voltage_min voltage_max voltage_min_design voltage_max_design voltage_ocv voltage_boot input_voltage_limit input_voltage_limit_max constant_charge_voltage constant_charge_voltage_max current_now current_avg current_max power_now temp capacity status health present online type; do
-    p="$d/$f"
-    if [ -r "$p" ]; then
-      v=$(cat "$p" 2>/dev/null)
-      echo "$f=$v"
-    fi
-  done
-done
-echo "## REGULATORS"
-for d in /sys/class/regulator/*; do
-  [ -d "$d" ] || continue
-  echo "## REGULATOR:$(basename "$d")"
-  for f in name microvolts min_uV max_uV microvolts_idle state status type; do
-    p="$d/$f"
-    if [ -r "$p" ]; then
-      v=$(cat "$p" 2>/dev/null)
-      echo "$f=$v"
-    fi
-  done
-done
-'''
-        ok, raw, err = self._call(shell, script, 25)
-        if not ok:
-            return {"ok": False, "error": err, "rails": [], "raw": ""}
+        """Enumerate power-supply and regulator nodes without relying on shell loops."""
+        fields = (
+            "voltage_now voltage_avg voltage_min voltage_max voltage_min_design "
+            "voltage_max_design voltage_ocv voltage_boot input_voltage_limit "
+            "input_voltage_limit_max constant_charge_voltage constant_charge_voltage_max "
+            "current_now current_avg current_max power_now temp capacity status health present online type"
+        ).split()
+        reg_fields = "name microvolts min_uV max_uV microvolts_idle state status type".split()
+
+        def list_dirs(pattern):
+            ok, out, err = self._call(shell, "ls -d " + pattern, 10)
+            if not ok:
+                return []
+            return [x.strip() for x in out.splitlines() if x.strip().startswith("/sys/")]
+
+        def read_node(path):
+            ok, out, err = self._call(shell, "cat " + path, 8)
+            return out.strip() if ok else ""
+
         rails = []
-        current = None
-        for line in raw.splitlines():
-            line = line.strip()
-            if line.startswith("## POWER_SUPPLY:"):
-                current = {"source": "POWER_SUPPLY", "name": line.split(":",1)[1], "values": {}}
-                rails.append(current)
-            elif line.startswith("## REGULATOR:"):
-                current = {"source": "REGULATOR", "name": line.split(":",1)[1], "values": {}}
-                rails.append(current)
-            elif line.startswith("## ") and not line.startswith("## POWER_SUPPLY:") and not line.startswith("## REGULATOR:"):
-                current = None
-            elif "=" in line and current is not None:
-                k, v = line.split("=",1)
-                current["values"][k] = v.strip()
-        return {"ok": True, "rails": rails, "raw": raw}
+        for base in list_dirs("/sys/class/power_supply/*"):
+            name = base.rsplit("/", 1)[-1]
+            values = {}
+            for field in fields:
+                value = read_node(base + "/" + field)
+                if value != "":
+                    values[field] = value
+            if values:
+                rails.append({"source": "POWER_SUPPLY", "name": name, "values": values})
+
+        for base in list_dirs("/sys/class/regulator/*"):
+            name = base.rsplit("/", 1)[-1]
+            values = {}
+            for field in reg_fields:
+                value = read_node(base + "/" + field)
+                if value != "":
+                    values[field] = value
+            if values:
+                rails.append({"source": "REGULATOR", "name": name, "values": values})
+
+        return {
+            "ok": True,
+            "rails": rails,
+            "raw": "",
+            "note": "Đã quét từng node sysfs; không dùng vòng lặp shell."
+        }
 
     def format_voltage_report(self, result):
         if not result.get("ok"):
