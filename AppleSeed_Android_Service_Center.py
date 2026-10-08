@@ -1174,7 +1174,8 @@ class AndroidTool(QMainWindow):
         sub=QLabel("Cắm máy → Apple Seed tự kiểm tra → tự chấm điểm → tự đưa ra bệnh nghi ngờ. Không dùng LOGCAT làm kết luận.")
         sub.setObjectName("muted"); sub.setWordWrap(True); l.addWidget(sub)
         top=QHBoxLayout()
-        self.button(top,"🩺 CHẨN ĐOÁN TOÀN BỘ",self.run_phone_diagnostic,"green")
+        self.button(top,"🩺 TEST TOÀN DIỆN",self.run_comprehensive_diagnostic,"green")
+        self.button(top,"⚡ ĐIỆN ÁP / POWER RAIL",self.run_voltage_scan,"primary")
         self.button(top,"↻ KIỂM TRA LẠI THIẾT BỊ",self.refresh_devices)
         self.button(top,"💾 XUẤT PHIẾU",self.export_diagnostic_report)
         l.addLayout(top)
@@ -1849,6 +1850,50 @@ class AndroidTool(QMainWindow):
                 msg="❌ CHẨN ĐOÁN LỖI: "+str(e)
                 self.post(lambda m=msg: (self.diag_out.setPlainText(m), self.diag_summary.setText(m)))
                 self.log(msg)
+        self.threaded(w)
+
+    def run_comprehensive_diagnostic(self):
+        if not self.require(): return
+        self.diag_out.clear()
+        self.diag_summary.setText("⏳ Đang chạy TEST TOÀN DIỆN...")
+        def w():
+            try:
+                rc,state=self.run(["-s",self.serial,"get-state"],8)
+                state=(state or "").strip().lower()
+                if rc != 0 or state != "device":
+                    msg="🔐 ADB chưa ở trạng thái DEVICE. Cấp quyền USB debugging rồi chạy lại."
+                    self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
+                    return
+                report=self.phone_diagnostic.comprehensive_run(self.shell)
+                txt=self.phone_diagnostic.format_report(report)
+                self.post(lambda r=report,t=txt:(self.diag_out.setPlainText(t),self.diag_summary.setText(self.phone_diagnostic.summary_text(r))))
+                self.log("🩺 COMPREHENSIVE DIAGNOSTIC: "+report.get("headline","Hoàn tất"))
+            except Exception as e:
+                msg="❌ TEST TOÀN DIỆN: "+str(e)
+                self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
+        self.threaded(w)
+
+    def run_voltage_scan(self):
+        if not self.require(): return
+        self.diag_out.clear()
+        self.diag_summary.setText("⏳ Đang quét toàn bộ power_supply node...")
+        def w():
+            try:
+                rc,state=self.run(["-s",self.serial,"get-state"],8)
+                state=(state or "").strip().lower()
+                if rc != 0 or state != "device":
+                    msg="🔐 ADB chưa ở trạng thái DEVICE. Không thể đọc power rail."
+                    self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
+                    return
+                result=self.phone_diagnostic.voltage_scan(self.shell)
+                txt=self.phone_diagnostic.format_voltage_report(result)
+                count=len(result.get("rails",[])) if result.get("ok") else 0
+                summary=f"⚡ ĐÃ QUÉT {count} POWER_SUPPLY NODE" if result.get("ok") else "🔴 KHÔNG ĐỌC ĐƯỢC POWER RAIL"
+                self.post(lambda t=txt,s=summary:(self.diag_out.setPlainText(t),self.diag_summary.setText(s)))
+                self.log("⚡ POWER RAIL SCAN: "+summary)
+            except Exception as e:
+                msg="❌ POWER RAIL SCAN: "+str(e)
+                self.post(lambda m=msg:(self.diag_out.setPlainText(m),self.diag_summary.setText(m)))
         self.threaded(w)
 
     def export_diagnostic_report(self):
