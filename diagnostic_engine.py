@@ -142,7 +142,7 @@ class PhoneDiagnosticEngine:
             ("Fingerprint", "Biometrics", "dumpsys fingerprint", "Fingerprint service phản hồi."),
             ("Face / Biometrics", "Biometrics", "dumpsys face", "Face/biometric service phản hồi."),
             ("Keyguard", "Input", "dumpsys window policy", "Keyguard/input policy phản hồi."),
-            ("Graphics", "Display", "dumpsys SurfaceFlinger --latency-clear", "SurfaceFlinger phản hồi."),
+            ("Graphics", "Display", "dumpsys SurfaceFlinger", "SurfaceFlinger phản hồi."),
             ("CPU", "Performance", "cat /proc/cpuinfo", "CPU information phản hồi."),
             ("Kernel memory", "Memory", "cat /proc/meminfo", "Kernel memory information phản hồi."),
             ("Mount / filesystem", "Storage", "cat /proc/mounts", "Filesystem mount table phản hồi."),
@@ -222,8 +222,7 @@ done
                 try:
                     n=float(v)
                     if k.startswith("voltage_"):
-                        if abs(n) >= 100000: unit=f" → {n/1000000:.3f} V"
-                        elif abs(n) >= 1000: unit=f" → {n/1000000:.6f} V"
+                        unit=f" → {n/1000000:.3f} V"
                     elif k.startswith("current_") or k.startswith("power_"):
                         unit=" (raw kernel unit)"
                     elif k=="temp":
