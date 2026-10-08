@@ -33,7 +33,7 @@ class PhoneDiagnosticEngine:
         ok, gp, err = self._call(shell, "getprop", 15)
         if ok:
             def prop(key):
-                m = re.search(r"^\\[" + re.escape(key) + r"\\]: \\[(.*?)\\]", gp, re.M)
+                m = re.search(r"^\[" + re.escape(key) + r"\]: \[(.*?)\]", gp, re.M)
                 return m.group(1) if m else "?"
             add("Thiết bị", "Thông tin", "OK",
                 f"{prop('ro.product.brand')} {prop('ro.product.model')} • Android {prop('ro.build.version.release')}",
@@ -43,8 +43,8 @@ class PhoneDiagnosticEngine:
 
         ok, bat, err = self._call(shell, "dumpsys battery", 12)
         if ok:
-            level = self._num(bat, r"level:\\s*(\\d+)")
-            temp = self._num(bat, r"temperature:\\s*(\\d+)")
+            level = self._num(bat, r"level:\s*(\d+)")
+            temp = self._num(bat, r"temperature:\s*(\d+)")
             problems = []
             if level is not None and level <= 5: problems.append(f"pin {level:.0f}%")
             if temp is not None and temp >= 450: problems.append(f"nhiệt pin {temp/10:.1f}°C")
@@ -69,8 +69,8 @@ class PhoneDiagnosticEngine:
 
         ok, mem, err = self._call(shell, "dumpsys meminfo", 15)
         if ok:
-            total = self._num(mem, r"Total RAM:\\s*([\\d,]+)K")
-            free = self._num(mem, r"Free RAM:\\s*([\\d,]+)K")
+            total = self._num(mem, r"Total RAM:\s*([\d,]+)K")
+            free = self._num(mem, r"Free RAM:\s*([\d,]+)K")
             if total and free:
                 pct = free / total * 100
                 add("RAM", "Hiệu năng", "WARN" if pct < 8 else "OK",
