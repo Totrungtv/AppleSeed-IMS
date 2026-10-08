@@ -182,7 +182,7 @@ class PhoneDiagnosticEngine:
         script = r'''for d in /sys/class/power_supply/*; do
   [ -d "$d" ] || continue
   echo "## POWER_SUPPLY:$(basename "$d")"
-  for f in voltage_now voltage_avg voltage_min voltage_max voltage_ocv current_now current_avg current_max power_now temp capacity status health present online type; do
+  for f in voltage_now voltage_avg voltage_min voltage_max voltage_min_design voltage_max_design voltage_ocv voltage_boot input_voltage_limit input_voltage_limit_max constant_charge_voltage constant_charge_voltage_max current_now current_avg current_max power_now temp capacity status health present online type; do
     p="$d/$f"
     if [ -r "$p" ]; then
       v=$(cat "$p" 2>/dev/null)
@@ -238,7 +238,7 @@ done
                 unit=""
                 try:
                     n=float(v)
-                    if k.startswith("voltage_"):
+                    if k.startswith("voltage_") or k.endswith("_uV") or k == "microvolts":
                         unit=f" → {n/1000000:.3f} V"
                     elif k.startswith("current_") or k.startswith("power_"):
                         unit=" (raw kernel unit)"
