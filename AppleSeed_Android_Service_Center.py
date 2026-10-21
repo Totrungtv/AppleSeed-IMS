@@ -138,6 +138,37 @@ class AnimatedHero(QWidget):
 
         p.drawPixmap(x, y, draw_w, draw_h, self.pixmap)
 
+        # Nhện robot Apple Seed: hoạt ảnh 2D nhẹ, không cần asset hay thư viện mới.
+        # Bò theo quỹ đạo elip ở vùng dưới banner, chân chuyển động theo phase.
+        p.save()
+        cx = int(w * (0.27 + 0.055 * math.sin(self.phase * 0.72)))
+        cy = int(h * (0.73 + 0.055 * math.cos(self.phase * 0.9)))
+        p.translate(cx, cy)
+        leg_pen = QPen(QColor(34, 245, 154, 235), 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        p.setPen(leg_pen)
+        for side in (-1, 1):
+            for i in range(4):
+                base_y = int((i - 1.5) * 4)
+                swing = int(4 * math.sin(self.phase * 2.1 + i * 0.9 + (0 if side < 0 else math.pi)))
+                knee_x = side * (12 + (i % 2) * 3)
+                knee_y = base_y + swing
+                foot_x = side * (21 + (i % 2) * 4)
+                foot_y = base_y + (7 if i < 2 else -7) - swing
+                p.drawLine(0 if side < 0 else 4, base_y, knee_x, knee_y)
+                p.drawLine(knee_x, knee_y, foot_x, foot_y)
+        # Thân kim loại tối với viền xanh phát sáng.
+        p.setPen(QPen(QColor(34, 245, 154, 220), 1.5))
+        p.setBrush(QBrush(QColor(15, 31, 37, 245)))
+        p.drawEllipse(-11, -7, 17, 14)
+        p.drawEllipse(3, -6, 11, 12)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(QColor(34, 245, 154, 65)))
+        p.drawEllipse(-13, -9, 21, 18)
+        p.setBrush(QBrush(QColor(34, 245, 154, 255)))
+        p.drawEllipse(6, -3, 3, 3)
+        p.drawEllipse(10, -3, 3, 3)
+        p.restore()
+
         # HUD scan-line chạy ngang rất nhẹ.
         scan = int((math.sin(self.phase * 0.72) * 0.5 + 0.5) * (h - 4)) + 2
         pen = QPen(QColor(56, 189, 248, 95), 2)
