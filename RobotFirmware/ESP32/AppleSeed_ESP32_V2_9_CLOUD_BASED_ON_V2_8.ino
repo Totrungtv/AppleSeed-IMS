@@ -81,7 +81,7 @@ String jsonValue(const String &src,const String &key) {
 bool cloudPost(const String &body,String &response) {
   if(WiFi.status()!=WL_CONNECTED || String(ROBOT_DEVICE_TOKEN).length()<24 ||
      String(ROBOT_DEVICE_TOKEN)=="PASTE_DEVICE_TOKEN_HERE") return false;
-  HTTPClient http; http.setTimeout(1800);
+  HTTPClient http; http.setTimeout(500);
   cloudTls.setInsecure();
   if(!http.begin(cloudTls,CLOUD_URL))return false;
   http.addHeader("Content-Type","application/json");
@@ -129,8 +129,8 @@ void cloudPollCommands() {
 void cloudService() {
   if(WiFi.status()!=WL_CONNECTED)return;
   uint32_t now=millis();
-  if(now-lastCloudPollMs>=2500){lastCloudPollMs=now;cloudPollCommands();}
-  if(now-lastCloudTelemetryMs>=15000){lastCloudTelemetryMs=now;cloudSendTelemetry();}
+  if(now-lastCloudPollMs>=5000){lastCloudPollMs=now;cloudPollCommands();}
+  if(now-lastCloudTelemetryMs>=30000){lastCloudTelemetryMs=now;cloudSendTelemetry();}
 }
 
 
@@ -374,7 +374,7 @@ void setup() {
   setupWeb(); boot(); drawHome();
 }
 void loop() {
-  server.handleClient(); pollUno(); cloudService(); touch.read();
+  server.handleClient(); pollUno(); touch.read();
   bool pressed = touch.isTouched && touch.touches > 0;
   if (pressed && !lastTouch && millis()-lastTouchMs > 180) {
     int tx=touch.points[0].x, ty=touch.points[0].y;
@@ -383,5 +383,6 @@ void loop() {
   }
   lastTouch=pressed;
   if(millis()-lastUiRefreshMs>=1000){lastUiRefreshMs=millis();refreshLivePage();}
-  delay(8);
+  cloudService();
+  delay(5);
 }
