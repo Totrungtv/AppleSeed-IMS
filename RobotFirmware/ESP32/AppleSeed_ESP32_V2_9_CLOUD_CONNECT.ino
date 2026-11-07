@@ -41,7 +41,7 @@ const char* ROBOT_DEVICE_TOKEN = "PASTE_PAIR_TOKEN_HERE";
 const char* GATEWAY_URL = "https://nuismqcjyutqigdydfkg.supabase.co/functions/v1/apple-seed-robot-gateway";
 const bool CLOUD_ENABLED = true;
 uint32_t lastCloudPollMs=0, lastCloudTelemetryMs=0, lastWifiRetryMs=0;
-bool cloudConfigured=false, cloudOK=false;
+bool cloudConfigured=false, cloudOK=false, homeWifiWasConnected=false;
 String cloudStatus="CLOUD NOT CONFIGURED";
 
 TFT_eSPI tft;
@@ -144,8 +144,24 @@ void startCloudWifi() {
 }
 void keepCloudWifi() {
   if(!cloudConfigured) return;
-  if(WiFi.status()!=WL_CONNECTED && millis()-lastWifiRetryMs>15000) {
-    lastWifiRetryMs=millis(); WiFi.begin(HOME_WIFI_SSID,HOME_WIFI_PASS);
+  bool connected=(WiFi.status()==WL_CONNECTED);
+  if(connected && !homeWifiWasConnected) {
+    homeWifiWasConnected=true;
+    cloudStatus="WIFI OK: "+WiFi.SSID();
+    Serial.println("HOME_WIFI=CONNECTED");
+    Serial.print("HOME_SSID="); Serial.println(WiFi.SSID());
+    Serial.print("HOME_IP="); Serial.println(WiFi.localIP());
+    Serial.print("RSSI="); Serial.println(WiFi.RSSI());
+  } else if(!connected && homeWifiWasConnected) {
+    homeWifiWasConnected=false;
+    cloudStatus="HOME WIFI LOST";
+    Serial.println("HOME_WIFI=DISCONNECTED");
+  }
+  if(!connected && millis()-lastWifiRetryMs>15000) {
+    lastWifiRetryMs=millis();
+    Serial.println("HOME_WIFI=RETRY");
+    WiFi.disconnect(false);
+    WiFi.begin(HOME_WIFI_SSID,HOME_WIFI_PASS);
   }
 }
 void sendCommand(const char* cmd) {
@@ -366,13 +382,13 @@ void setupWeb() {
   server.begin(); Serial.println("HTTP_SERVER_STARTED");
 }
 void setup() {
-  Serial.begin(9600); delay(500); Serial.println(); Serial.println("APPLE_SEED_BOOT_V2_8_FUNCTIONAL_FIX");
+  Serial.begin(115200); delay(500); Serial.println(); Serial.println("APPLE_SEED_BOOT_V2_8_FUNCTIONAL_FIX");
   tft.init();tft.setRotation(0);SH=tft.height(); Wire.begin(TOUCH_SDA,TOUCH_SCL);
   touch.begin(); touch.setRotation(ROTATION_INVERTED); touchOK=true;
   WiFi.mode(WIFI_AP); WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
   wifiOK=WiFi.softAP(AP_SSID,AP_PASS);
   Serial.print("AP_START="); Serial.println(wifiOK ? "OK" : "FAIL");
-  Serial.print("AP_SSID="); Serial.println(AP_SSID); Serial.print("AP_IP="); Serial.println(WiFi.softAPIP());
+  Serial.print("AP_SSID="); Serial.println(AP_SSID); Serial.print("AP_IP="); Serial.println(WiFi.softAPIP());\n  Serial.print("HOME_WIFI_CONFIGURED="); Serial.println(cloudCredentialsReady() ? "YES" : "NO");
   setupWeb(); startCloudWifi(); boot(); drawHome();
 }
 void loop() {
