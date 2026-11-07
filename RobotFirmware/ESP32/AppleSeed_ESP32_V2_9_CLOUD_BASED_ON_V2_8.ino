@@ -87,8 +87,11 @@ void cloudPollCommands() {
   }
   cloudReady=true; cloudState="CLOUD ONLINE";
   if(response.indexOf("\\"command\\":null")>=0)return;
-  String commandId=jsonValue(response,"id");
-  String command=jsonValue(response,"command");
+  int blockAt=response.indexOf("\\"command\\":{");
+  if(blockAt<0)return;
+  String commandBlock=response.substring(blockAt);
+  String commandId=jsonValue(commandBlock,"id");
+  String command=jsonValue(commandBlock,"command");
   if(commandId.length()==0 || command.length()==0)return;
   const char* unoCmd=nullptr;
   if(command=="forward")unoCmd="F";
