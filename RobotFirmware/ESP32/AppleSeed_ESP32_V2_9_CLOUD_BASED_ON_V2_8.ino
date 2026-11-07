@@ -18,6 +18,8 @@
 #include <TFT_eSPI.h>
 #include <Wire.h>
 #include <TAMC_GT911.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 
 #define TOUCH_SDA 21
 #define TOUCH_SCL 22
@@ -32,85 +34,6 @@ const char* AP_PASS = "SeedVIP2026";
 TFT_eSPI tft;
 TAMC_GT911 touch(TOUCH_SDA, TOUCH_SCL, TOUCH_INT, TOUCH_RST, LCD_W, LCD_H);
 WebServer server(80);
-
-// ===== APPLE SEED CLOUD LINK (V2.9, based on stable V2.8) =====
-// Fill these three values locally after pairing the robot in the website admin.
-const char* HOME_WIFI_SSID = "YOUR_WIFI_NAME";
-const char* HOME_WIFI_PASS = "YOUR_WIFI_PASSWORD";
-const char* ROBOT_DEVICE_ID = "APPLESEED-ROBOT-001";
-const char* ROBOT_DEVICE_TOKEN = "PASTE_DEVICE_TOKEN_HERE";
-const char* CLOUD_URL = "https://nuismqcjyutqigdydfkg.supabase.co/functions/v1/apple-seed-robot-gateway";
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
-WiFiClientSecure cloudTls;
-uint32_t lastCloudPollMs=0, lastCloudTelemetryMs=0;
-bool cloudReady=false;
-String cloudState="CLOUD WAIT";
-String jsonValue(const String &src,const String &key) {
-  String needle="\\""+key+"\\"";
-  int p=src.indexOf(needle); if(p<0)return "";
-  p=src.indexOf(':',p+needle.length()); if(p<0)return "";
-  p++; while(p<src.length() && (src[p]==' '||src[p]=='\\t'))p++;
-  if(p>=src.length() || src[p]!='"')return "";
-  int e=src.indexOf('"',p+1); if(e<0)return "";
-  return src.substring(p+1,e);
-}
-bool cloudPost(const String &body,String &response) {
-  if(WiFi.status()!=WL_CONNECTED || String(ROBOT_DEVICE_TOKEN).length()<24 ||
-     String(ROBOT_DEVICE_TOKEN)=="PASTE_DEVICE_TOKEN_HERE") return false;
-  HTTPClient http; http.setTimeout(1800);
-  cloudTls.setInsecure(); // TLS encrypted; certificate validation can be pinned in a later release.
-  if(!http.begin(cloudTls,CLOUD_URL))return false;
-  http.addHeader("Content-Type","application/json");
-  http.addHeader("x-robot-id",ROBOT_DEVICE_ID);
-  http.addHeader("x-device-token",ROBOT_DEVICE_TOKEN);
-  int code=http.POST(body); response=code>0?http.getString():"";
-  http.end(); return code>=200 && code<300;
-}
-void cloudSendTelemetry() {
-  String body="{\\"action\\":\\"telemetry\\",\\"telemetry\\":{";
-  body+="\\"battery_v\\":"+String(batteryV,2)+",";
-  body+="\\"battery_pct\\":"+String(batteryPct)+",";
-  body+="\\"distance_cm\\":"+String(distanceCm,1)+",";
-  body+="\\"rain_detected\\":"+String(rain!=0?"true":"false")+",";
-  body+="\\"obstacle_detected\\":"+String(obstacle?"true":"false")+",";
-  body+="\\"uno_online\\":"+String(unoOK?"true":"false")+",";
-  body+="\\"robot_mode\\":\\""+robotMode+"\\"}}";
-  String response;
-  cloudReady=cloudPost(body,response);
-  cloudState=cloudReady?"CLOUD ONLINE":"CLOUD ERROR";
-}
-void cloudPollCommands() {
-  String response;
-  if(!cloudPost("{\\"action\\":\\"device_poll\\"}",response)) {
-    cloudReady=false; cloudState=(WiFi.status()==WL_CONNECTED)?"CLOUD AUTH/NET ERROR":"WIFI OFFLINE"; return;
-  }
-  cloudReady=true; cloudState="CLOUD ONLINE";
-  if(response.indexOf("\\"command\\":null")>=0)return;
-  int blockAt=response.indexOf("\\"command\\":{");
-  if(blockAt<0)return;
-  String commandBlock=response.substring(blockAt);
-  String commandId=jsonValue(commandBlock,"id");
-  String command=jsonValue(commandBlock,"command");
-  if(commandId.length()==0 || command.length()==0)return;
-  const char* unoCmd=nullptr;
-  if(command=="forward")unoCmd="F";
-  else if(command=="backward")unoCmd="B";
-  else if(command=="left")unoCmd="L";
-  else if(command=="right")unoCmd="R";
-  else if(command=="stop")unoCmd="S";
-  else if(command=="turn_around")unoCmd="U";
-  if(unoCmd)sendCommand(unoCmd);
-  String result="{\\"action\\":\\"complete\\",\\"command_id\\":\\""+commandId+"\\",\\"status\\":\\""+String(unoCmd?"completed":"failed")+"\\"}";
-  String doneResponse; cloudPost(result,doneResponse);
-}
-void cloudService() {
-  if(WiFi.status()!=WL_CONNECTED)return;
-  uint32_t now=millis();
-  if(now-lastCloudPollMs>=2500){lastCloudPollMs=now;cloudPollCommands();}
-  if(now-lastCloudTelemetryMs>=15000){lastCloudTelemetryMs=now;cloudSendTelemetry();}
-}
-
 
 enum Page { HOME, DRIVE, SENSORS, NETWORK, CAMERA, AI_PAGE, SETTINGS };
 Page page = HOME;
@@ -134,6 +57,82 @@ int batteryPct=0, rain=0;
 bool obstacle=false;
 bool apEnabled=true;
 String lastCommand="S";
+
+// ===== APPLE SEED CLOUD LINK V2.9 =====
+const char* HOME_WIFI_SSID = "YOUR_WIFI_NAME";
+const char* HOME_WIFI_PASS = "YOUR_WIFI_PASSWORD";
+const char* ROBOT_DEVICE_ID = "APPLESEED-ROBOT-001";
+const char* ROBOT_DEVICE_TOKEN = "PASTE_DEVICE_TOKEN_HERE";
+const char* CLOUD_URL = "https://nuismqcjyutqigdydfkg.supabase.co/functions/v1/apple-seed-robot-gateway";
+WiFiClientSecure cloudTls;
+uint32_t lastCloudPollMs=0, lastCloudTelemetryMs=0;
+bool cloudReady=false;
+String cloudState="CLOUD WAIT";
+
+String jsonValue(const String &src,const String &key) {
+  String needle = "\"" + key + "\"";
+  int p=src.indexOf(needle); if(p<0)return "";
+  p=src.indexOf(':',p+needle.length()); if(p<0)return "";
+  p++; while(p<src.length() && (src[p]==' '||src[p]=='\t'))p++;
+  if(p>=src.length() || src[p]!='"')return "";
+  int e=src.indexOf('"',p+1); if(e<0)return "";
+  return src.substring(p+1,e);
+}
+bool cloudPost(const String &body,String &response) {
+  if(WiFi.status()!=WL_CONNECTED || String(ROBOT_DEVICE_TOKEN).length()<24 ||
+     String(ROBOT_DEVICE_TOKEN)=="PASTE_DEVICE_TOKEN_HERE") return false;
+  HTTPClient http; http.setTimeout(1800);
+  cloudTls.setInsecure();
+  if(!http.begin(cloudTls,CLOUD_URL))return false;
+  http.addHeader("Content-Type","application/json");
+  http.addHeader("x-robot-id",ROBOT_DEVICE_ID);
+  http.addHeader("x-device-token",ROBOT_DEVICE_TOKEN);
+  int code=http.POST(body); response=code>0?http.getString():"";
+  http.end(); return code>=200 && code<300;
+}
+void cloudSendTelemetry() {
+  String body="{\"action\":\"telemetry\",\"telemetry\":{";
+  body+="\"battery_v\":"+String(batteryV,2)+",";
+  body+="\"battery_pct\":"+String(batteryPct)+",";
+  body+="\"distance_cm\":"+String(distanceCm,1)+",";
+  body+="\"rain_detected\":"+String(rain!=0?"true":"false")+",";
+  body+="\"obstacle_detected\":"+String(obstacle?"true":"false")+",";
+  body+="\"uno_online\":"+String(unoOK?"true":"false")+",";
+  body+="\"robot_mode\":\""+robotMode+"\"}}";
+  String response;
+  cloudReady=cloudPost(body,response);
+  cloudState=cloudReady?"CLOUD ONLINE":"CLOUD ERROR";
+}
+void cloudPollCommands() {
+  String response;
+  if(!cloudPost("{\"action\":\"device_poll\"}",response)) {
+    cloudReady=false; cloudState=(WiFi.status()==WL_CONNECTED)?"CLOUD AUTH/NET ERROR":"WIFI OFFLINE"; return;
+  }
+  cloudReady=true; cloudState="CLOUD ONLINE";
+  int blockAt=response.indexOf("\"command\":{");
+  if(blockAt<0)return;
+  String commandBlock=response.substring(blockAt);
+  String commandId=jsonValue(commandBlock,"id");
+  String command=jsonValue(commandBlock,"command");
+  if(commandId.length()==0 || command.length()==0)return;
+  const char* unoCmd=nullptr;
+  if(command=="forward")unoCmd="F";
+  else if(command=="backward")unoCmd="B";
+  else if(command=="left")unoCmd="L";
+  else if(command=="right")unoCmd="R";
+  else if(command=="stop")unoCmd="S";
+  else if(command=="turn_around")unoCmd="U";
+  if(unoCmd)sendCommand(unoCmd);
+  String result="{\"action\":\"complete\",\"command_id\":\""+commandId+"\",\"status\":\""+String(unoCmd?"completed":"failed")+"\"}";
+  String doneResponse; cloudPost(result,doneResponse);
+}
+void cloudService() {
+  if(WiFi.status()!=WL_CONNECTED)return;
+  uint32_t now=millis();
+  if(now-lastCloudPollMs>=2500){lastCloudPollMs=now;cloudPollCommands();}
+  if(now-lastCloudTelemetryMs>=15000){lastCloudTelemetryMs=now;cloudSendTelemetry();}
+}
+
 
 const char* pageName(Page p) {
   switch(p) {
@@ -368,7 +367,8 @@ void setup() {
   tft.init();tft.setRotation(0);SH=tft.height(); Wire.begin(TOUCH_SDA,TOUCH_SCL);
   touch.begin(); touch.setRotation(ROTATION_INVERTED); touchOK=true;
   WiFi.mode(WIFI_AP_STA); WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
-  wifiOK=WiFi.softAP(AP_SSID,AP_PASS);\n  if(String(HOME_WIFI_SSID)!="YOUR_WIFI_NAME") WiFi.begin(HOME_WIFI_SSID,HOME_WIFI_PASS);
+  wifiOK=WiFi.softAP(AP_SSID,AP_PASS);
+  if(String(HOME_WIFI_SSID)!="YOUR_WIFI_NAME") WiFi.begin(HOME_WIFI_SSID,HOME_WIFI_PASS);
   Serial.print("AP_START="); Serial.println(wifiOK ? "OK" : "FAIL");
   Serial.print("AP_SSID="); Serial.println(AP_SSID); Serial.print("AP_IP="); Serial.println(WiFi.softAPIP());
   setupWeb(); boot(); drawHome();
