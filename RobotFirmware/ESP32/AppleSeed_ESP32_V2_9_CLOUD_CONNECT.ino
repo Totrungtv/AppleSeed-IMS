@@ -116,7 +116,7 @@ void cloudPoll() {
   StaticJsonDocument<128> req; req["action"]="device_poll";
   String raw=cloudPost(req); if(raw.length()==0) {cloudStatus="GATEWAY ERROR";return;}
   StaticJsonDocument<1024> res; if(deserializeJson(res,raw)) {cloudStatus="BAD JSON";return;}
-  if(!res["ok"]) {cloudStatus=String((const char*)res["error"]|"AUTH ERROR");return;}
+  if(!res["ok"]) { const char* err = res["error"] | "AUTH ERROR"; cloudStatus=String(err); return; }
   if(res["command"].isNull()) {cloudStatus="ONLINE - WAITING";return;}
   String id=res["command"]["id"]|""; String cmd=res["command"]["command"]|"";
   applyCloudCommand(cmd);
